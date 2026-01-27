@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 import plotly.graph_objects as go
 from datetime import datetime
 import ee
+import os
 from earth_engine_utils import get_admin_boundaries, get_boundary_names
 from vegetation_indices import mask_clouds, add_vegetation_indices
 import time
@@ -18,108 +19,49 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Initialize Earth Engine ONCE when the app starts
+@st.cache_resource
+def initialize_earth_engine():
+    """Initialize Earth Engine once for the entire app"""
+    try:
+        # Try to initialize Earth Engine
+        ee.Initialize(project='citric-hawk-457513-i6')
+        st.session_state.ee_initialized = True
+        return True
+    except ee.EEException:
+        try:
+            # If not initialized, try to authenticate and initialize
+            ee.Authenticate()
+            ee.Initialize(project='citric-hawk-457513-i6')
+            st.session_state.ee_initialized = True
+            return True
+        except:
+            # If that fails too, use service account credentials
+            try:
+                # Try to use environment variable for credentials
+                service_account = 'citric-hawk-457513-i6@appspot.gserviceaccount.com'
+                credentials = ee.ServiceAccountCredentials(service_account, 'key.json')
+                ee.Initialize(credentials, project='citric-hawk-457513-i6')
+                st.session_state.ee_initialized = True
+                return True
+            except:
+                st.session_state.ee_initialized = False
+                return False
+
+# Initialize Earth Engine at app startup
+if 'ee_initialized' not in st.session_state:
+    with st.spinner("Initializing Earth Engine..."):
+        initialize_earth_engine()
+
 # Initialize session state
 if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'ee_initialized' not in st.session_state:
-    st.session_state.ee_initialized = False
+    st.session_state.authenticated = True  # Skip authentication since we're using your EE
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-if 'auth_attempted' not in st.session_state:
-    st.session_state.auth_attempted = False
 
-# Authentication check
-if not st.session_state.authenticated:
-    st.markdown("""
-    <div style="text-align: center; background: linear-gradient(90deg, #1f4037, #99f2c8); padding: 30px; border-radius: 15px; margin-bottom: 30px;">
-    <h1 style="color: white; font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">📊 KHISBA GIS</h1>
-    <h3 style="color: #e8f5e8; margin: 10px 0; font-weight: 300;">Professional Vegetation Indices Analytics</h3>
-    <p style="color: #ffffff; font-size: 1.1rem; margin: 15px 0 0 0;">Created by <strong>Taibi Farouk Djilali</strong></p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("### 🔐 Authentication Required")
-    
-    # Create tabs for different authentication methods
-    auth_tab1, auth_tab2 = st.tabs(["Google Earth Engine Login", "Admin Login"])
-    
-    with auth_tab1:
-        st.info("Please authenticate with Google Earth Engine to access satellite data")
-        
-        if not st.session_state.auth_attempted:
-            if st.button("🌐 Authenticate with Google Earth Engine", type="primary"):
-                st.session_state.auth_attempted = True
-                st.rerun()
-        
-        if st.session_state.auth_attempted:
-            with st.spinner("Initializing Earth Engine..."):
-                try:
-                    # Initialize Earth Engine with authentication
-                    ee.Initialize(project='citric-hawk-457513-i6')
-                    st.session_state.ee_initialized = True
-                    st.session_state.authenticated = True
-                    st.success("✅ Earth Engine authenticated successfully!")
-                    time.sleep(1)
-                    st.rerun()
-                except ee.EEException:
-                    st.error("""
-                    ❌ Earth Engine authentication required!
-                    
-                    Please follow these steps:
-                    
-                    1. **Click the link below** to authenticate
-                    2. **Sign in with your Google account**
-                    3. **Copy the authorization code**
-                    4. **Paste it in the text box below**
-                    
-                    """)
-                    
-                    # Display authentication instructions
-                    st.markdown("""
-                    **Option 1: Manual Authentication (for deployment)**
-                    ```python
-                    import ee
-                    ee.Authenticate()
-                    ee.Initialize(project='citric-hawk-457513-i6')
-                    ```
-                    
-                    **Option 2: For Streamlit Cloud deployment**
-                    You need to set up OAuth 2.0 credentials in Google Cloud Console
-                    """)
-                    
-                    # Add note about Streamlit Cloud
-                    st.warning("""
-                    **Note for Streamlit Cloud:**
-                    - Create OAuth 2.0 credentials in Google Cloud Console
-                    - Add callback URL: https://your-app-name.streamlit.app
-                    - Set environment variables for client ID and secret
-                    """)
-                    
-    with auth_tab2:
-        st.info("Admin access for demonstration purposes")
-        password = st.text_input("Admin Password", type="password", placeholder="Enter admin password")
-        
-        if st.button("🔓 Admin Login", type="secondary"):
-            if password == "admin":
-                st.session_state.authenticated = True
-                st.success("✅ Admin login successful!")
-                st.rerun()
-            else:
-                st.error("❌ Invalid admin password. Demo password: admin")
-    
-    st.markdown("""
-    <div style="text-align: center; margin-top: 30px; padding: 20px; background: #1a1a1a; border-radius: 10px;">
-        <h4 style="color: #00ff88; margin: 0;">Demo Access</h4>
-        <p style="color: #cccccc; margin: 10px 0 0 0;">Admin Password: <strong>admin</strong></p>
-        <p style="color: #888888; font-size: 0.9rem; margin: 10px 0 0 0;">Note: Full satellite data access requires Google Earth Engine authentication</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.stop()
-
-# Main application header (shown after authentication)
+# Main application header
 st.markdown("""
 <div style="text-align: center; background: linear-gradient(90deg, #1f4037, #99f2c8); padding: 20px; border-radius: 10px; margin-bottom: 20px;">
 <h1 style="color: white; font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">📊 KHISBA GIS</h1>
@@ -137,7 +79,7 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 # Status indicator
-st.sidebar.markdown("### 🔐 **AUTHENTICATION STATUS**")
+st.sidebar.markdown("### 🔐 **SYSTEM STATUS**")
 
 if st.session_state.ee_initialized:
     st.sidebar.success("✅ Earth Engine Connected")
@@ -148,26 +90,22 @@ if st.session_state.ee_initialized:
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.sidebar.warning("⚠️ Limited Mode")
+    st.sidebar.error("❌ Earth Engine Error")
     st.sidebar.markdown(f"""
     <div style="background: #2a1a1a; padding: 10px; border-radius: 5px; margin: 10px 0;">
-        <small style="color: #ffaa00;">📴 Offline Mode</small><br>
-        <small style="color: #888888;">Satellite data: <strong>Demo Only</strong></small>
+        <small style="color: #ff4444;">⚠️ Connection Failed</small><br>
+        <small style="color: #888888;">Please check authentication</small>
     </div>
     """, unsafe_allow_html=True)
     
-    if st.sidebar.button("🔄 Retry Earth Engine Connection", type="secondary"):
-        with st.spinner("Connecting to Earth Engine..."):
-            try:
-                ee.Initialize(project='citric-hawk-457513-i6')
-                st.session_state.ee_initialized = True
+    if st.sidebar.button("🔄 Retry Connection", type="primary"):
+        with st.spinner("Reconnecting to Earth Engine..."):
+            if initialize_earth_engine():
                 st.sidebar.success("✅ Earth Engine connected!")
                 st.rerun()
-            except:
-                st.sidebar.error("❌ Failed to connect. Please authenticate.")
 
 # Main application logic
-if st.session_state.authenticated:
+if st.session_state.authenticated and st.session_state.ee_initialized:
     # Professional Study Area Selection
     st.markdown("""
     <div style="background: linear-gradient(90deg, #1a1a1a, #2a2a2a); padding: 15px; border-radius: 10px; border-left: 4px solid #00ff88; margin: 20px 0;">
@@ -181,27 +119,17 @@ if st.session_state.authenticated:
     with col1:
         # Country selection
         try:
-            if st.session_state.ee_initialized:
-                countries_fc = get_admin_boundaries(0)
-                if countries_fc is not None:
-                    country_names = get_boundary_names(countries_fc, 0)
-                    selected_country = st.selectbox(
-                        "Select Country",
-                        options=[""] + country_names,
-                        help="Choose a country for analysis"
-                    )
-                else:
-                    st.error("Failed to load countries data")
-                    selected_country = ""
-            else:
-                # Demo mode with limited countries
-                demo_countries = ["United States", "Canada", "United Kingdom", "Germany", "France", "Australia", "India", "China", "Brazil"]
+            countries_fc = get_admin_boundaries(0)
+            if countries_fc is not None:
+                country_names = get_boundary_names(countries_fc, 0)
                 selected_country = st.selectbox(
                     "Select Country",
-                    options=[""] + demo_countries,
+                    options=[""] + country_names,
                     help="Choose a country for analysis"
                 )
-                countries_fc = None
+            else:
+                st.error("Failed to load countries data")
+                selected_country = ""
         except Exception as e:
             st.error(f"Error loading countries: {str(e)}")
             selected_country = ""
@@ -255,161 +183,129 @@ if st.session_state.authenticated:
         st.markdown("### 🌍 **KHISBA GIS ANALYTICS WORKSPACE**")
         
         try:
-            # Demo mode check
-            if not st.session_state.ee_initialized:
-                st.warning("⚠️ Running in DEMO MODE - Limited functionality")
-                st.info("To access full satellite data, please authenticate with Google Earth Engine")
-                
-                # Create a simple demo map
-                import folium
-                from streamlit_folium import st_folium
-                
-                # Default center coordinates for demo
-                if selected_country == "United States":
-                    center = [39.8283, -98.5795]
-                elif selected_country == "Canada":
-                    center = [56.1304, -106.3468]
-                elif selected_country == "United Kingdom":
-                    center = [54.3781, -3.4360]
+            if selected_country and countries_fc is not None:
+                # Determine which geometry to use
+                if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
+                    geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                    area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                    area_level = "Municipality"
+                elif selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
+                    geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                    area_name = f"{selected_admin1}, {selected_country}"
+                    area_level = "State/Province"
                 else:
-                    center = [20, 0]  # Default center for Africa
+                    geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                    area_name = selected_country
+                    area_level = "Country"
                 
-                m = folium.Map(location=center, zoom_start=4)
-                folium.Marker(
-                    center,
-                    popup=f"Demo Area: {selected_country}",
-                    tooltip="Click for info"
+                # Get geometry bounds for map centering
+                bounds = geometry.geometry().bounds().getInfo()
+                coords = bounds['coordinates'][0]
+                
+                # Calculate center and area
+                lats = [coord[1] for coord in coords]
+                lons = [coord[0] for coord in coords]
+                center_lat = sum(lats) / len(lats)
+                center_lon = sum(lons) / len(lons)
+                
+                # Create professional GIS map
+                m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=6,
+                    tiles=None,
+                    control_scale=True
+                )
+                
+                # Add base layers
+                folium.TileLayer(
+                    'OpenStreetMap',
+                    name='OpenStreetMap',
+                    overlay=False,
+                    control=True
                 ).add_to(m)
                 
-                st_folium(m, width=800, height=500)
+                folium.TileLayer(
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri',
+                    name='Satellite',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
                 
-                st.session_state.selected_geometry = None
+                # Add study area
+                folium.GeoJson(
+                    bounds,
+                    style_function=lambda x: {
+                        'fillColor': '#00ff88',
+                        'color': '#ffffff',
+                        'weight': 3,
+                        'fillOpacity': 0.2,
+                        'dashArray': '5, 5'
+                    },
+                    popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
+                    tooltip=f"Click for details: {area_name}"
+                ).add_to(m)
                 
-            else:
-                # Real Earth Engine mode
-                if selected_country and countries_fc is not None:
-                    # Determine which geometry to use
-                    if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
-                        geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                        area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-                        area_level = "Municipality"
-                    elif selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
-                        geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                        area_name = f"{selected_admin1}, {selected_country}"
-                        area_level = "State/Province"
-                    else:
-                        geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                        area_name = selected_country
-                        area_level = "Country"
+                # Add plugins
+                from folium.plugins import MousePosition, MeasureControl
+                
+                MousePosition().add_to(m)
+                MeasureControl(primary_length_unit='kilometers').add_to(m)
+                folium.LayerControl().add_to(m)
+                
+                # Display map
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.markdown("""
+                    <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
+                    """, unsafe_allow_html=True)
                     
-                    # Get geometry bounds for map centering
-                    bounds = geometry.geometry().bounds().getInfo()
-                    coords = bounds['coordinates'][0]
-                    
-                    # Calculate center and area
-                    lats = [coord[1] for coord in coords]
-                    lons = [coord[0] for coord in coords]
-                    center_lat = sum(lats) / len(lats)
-                    center_lon = sum(lons) / len(lons)
-                    
-                    # Create professional GIS map
-                    m = folium.Map(
-                        location=[center_lat, center_lon],
-                        zoom_start=6,
-                        tiles=None,
-                        control_scale=True
+                    map_data = st_folium(
+                        m, 
+                        width=None, 
+                        height=500,
+                        returned_objects=["last_clicked", "bounds"],
+                        key="gis_map"
                     )
                     
-                    # Add base layers
-                    folium.TileLayer(
-                        'OpenStreetMap',
-                        name='OpenStreetMap',
-                        overlay=False,
-                        control=True
-                    ).add_to(m)
-                    
-                    folium.TileLayer(
-                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                        attr='Esri',
-                        name='Satellite',
-                        overlay=False,
-                        control=True
-                    ).add_to(m)
-                    
-                    # Add study area
-                    folium.GeoJson(
-                        bounds,
-                        style_function=lambda x: {
-                            'fillColor': '#00ff88',
-                            'color': '#ffffff',
-                            'weight': 3,
-                            'fillOpacity': 0.2,
-                            'dashArray': '5, 5'
-                        },
-                        popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
-                        tooltip=f"Click for details: {area_name}"
-                    ).add_to(m)
-                    
-                    # Add plugins
-                    from folium.plugins import MousePosition, MeasureControl
-                    
-                    MousePosition().add_to(m)
-                    MeasureControl(primary_length_unit='kilometers').add_to(m)
-                    folium.LayerControl().add_to(m)
-                    
-                    # Display map
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        st.markdown("""
-                        <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
-                        """, unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+                
+                with col2:
+                    # Information panel
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
+                        <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
+                        <hr style="border-color: #00ff88;">
                         
-                        map_data = st_folium(
-                            m, 
-                            width=None, 
-                            height=500,
-                            returned_objects=["last_clicked", "bounds"],
-                            key="gis_map"
-                        )
-                        
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    with col2:
-                        # Information panel
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
-                            <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
-                            <hr style="border-color: #00ff88;">
-                            
-                            <div style="margin: 15px 0;">
-                                <strong style="color: #ffffff;">Study Area:</strong><br>
-                                <span style="color: #cccccc;">{area_name}</span>
-                            </div>
-                            
-                            <div style="margin: 15px 0;">
-                                <strong style="color: #ffffff;">Administrative Level:</strong><br>
-                                <span style="color: #00ff88;">{area_level}</span>
-                            </div>
-                            
-                            <div style="margin: 15px 0;">
-                                <strong style="color: #ffffff;">Coordinates:</strong><br>
-                                <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
-                                Lon: {center_lon:.4f}°</span>
-                            </div>
-                            
-                            <div style="margin: 15px 0;">
-                                <strong style="color: #ffffff;">Data Mode:</strong><br>
-                                <span style="color: #00ff88;">🌐 Live Satellite Data</span>
-                            </div>
+                        <div style="margin: 15px 0;">
+                            <strong style="color: #ffffff;">Study Area:</strong><br>
+                            <span style="color: #cccccc;">{area_name}</span>
                         </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.session_state.selected_geometry = geometry
-                    
+                        
+                        <div style="margin: 15px 0;">
+                            <strong style="color: #ffffff;">Administrative Level:</strong><br>
+                            <span style="color: #00ff88;">{area_level}</span>
+                        </div>
+                        
+                        <div style="margin: 15px 0;">
+                            <strong style="color: #ffffff;">Coordinates:</strong><br>
+                            <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
+                            Lon: {center_lon:.4f}°</span>
+                        </div>
+                        
+                        <div style="margin: 15px 0;">
+                            <strong style="color: #ffffff;">Data Status:</strong><br>
+                            <span style="color: #00ff88;">✅ Ready for Analysis</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.session_state.selected_geometry = geometry
+                
         except Exception as e:
             st.error(f"❌ GIS Map Error: {str(e)}")
-            st.info("Please check your internet connection and try refreshing the page.")
+            st.info("Please try selecting a different area or check your connection.")
     
     # Professional Analysis Parameters
     st.markdown("""
@@ -470,9 +366,6 @@ if st.session_state.authenticated:
     if st.button("🚀 Run Analysis", type="primary"):
         if not selected_indices:
             st.error("Please select at least one vegetation index")
-        elif not st.session_state.ee_initialized:
-            st.error("⚠️ Earth Engine not connected. Please authenticate to access satellite data.")
-            st.info("Click the 'Retry Earth Engine Connection' button in the sidebar")
         elif st.session_state.selected_geometry is None:
             st.error("Please select a study area first")
         else:
@@ -542,6 +435,7 @@ if st.session_state.authenticated:
                     
                 except Exception as e:
                     st.error(f"❌ Analysis failed: {str(e)}")
+                    st.info("This might be due to large area selection or limited data availability. Try selecting a smaller area.")
 
 # Display Results
 if st.session_state.analysis_results:
@@ -692,10 +586,35 @@ if st.session_state.analysis_results:
     else:
         st.warning("No data available for export")
 
+elif not st.session_state.ee_initialized:
+    st.error("""
+    ❌ Earth Engine not initialized!
+    
+    To fix this issue:
+    
+    1. **For Local Development:**
+       Run this command in your terminal or add it to your main script:
+       ```python
+       import ee
+       ee.Authenticate()  # Run this once to authenticate
+       ee.Initialize(project='citric-hawk-457513-i6')
+       ```
+    
+    2. **For Streamlit Cloud Deployment:**
+       You need to create a service account key and set it up properly.
+    
+    3. **Quick Fix for Testing:**
+       Modify the initialize_earth_engine() function to use your pre-authenticated credentials.
+    """)
+    
+    if st.button("🔄 Retry Earth Engine Initialization"):
+        if initialize_earth_engine():
+            st.success("✅ Earth Engine initialized successfully!")
+            st.rerun()
+        else:
+            st.error("Failed to initialize. Please check your credentials.")
+
+elif st.session_state.selected_geometry is None:
+    st.info("👆 Please select a study area to proceed with analysis")
 else:
-    if not st.session_state.ee_initialized:
-        st.info("👆 Please authenticate with Google Earth Engine to access satellite data")
-    elif st.session_state.selected_geometry is None:
-        st.info("👆 Please select a study area to proceed with analysis")
-    else:
-        st.info("👆 Configure your analysis parameters and click 'Run Analysis'")
+    st.info("👆 Configure your analysis parameters and click 'Run Analysis'")
