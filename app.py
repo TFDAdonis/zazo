@@ -761,8 +761,4 @@ else:
     elif st.session_state.selected_geometry is None:
         st.info("👆 Please select a study area to proceed with analysis")
     else:
-        st.info("👆 Configure your analysis parameters and click 'Run Analysis'")     can u make this streamlit app work with my auth and etract data without the json thing , so many users can get the data this is my auth import ee
-
-# Trigger authentication
-ee.Authenticate()
-ee.Initialize(project='citric-hawk-457513-i6') 
+        st.info("👆 Configure your analysis parameters and click 'Run Analysis'")     
