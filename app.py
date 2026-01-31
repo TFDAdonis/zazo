@@ -931,7 +931,7 @@ if st.session_state.analysis_results:
                                 'text': f'<b>{index}</b> - Vegetation Analysis',
                                 'x': 0.5,
                                 'xanchor': 'center',
-                                'font': {'size': 20, color='#ffffff'}
+                            'font': {'size': 20, 'color': '#ffffff'}
                             },
                             plot_bgcolor='#0E1117',
                             paper_bgcolor='#0E1117',
