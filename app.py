@@ -14,6 +14,144 @@ import ee
 import traceback
 import base64
 
+# ============================================
+# EARTH ENGINE HELPER FUNCTIONS - ADD THESE
+# ============================================
+
+def get_admin_boundaries(level, country_code=None, admin1_code=None):
+    """
+    Get administrative boundaries from Earth Engine
+    
+    Parameters:
+    - level: 0 for country, 1 for admin1, 2 for admin2
+    - country_code: ADM0_CODE for filtering
+    - admin1_code: ADM1_CODE for filtering
+    
+    Returns:
+    - ee.FeatureCollection of boundaries
+    """
+    try:
+        # Load FAO GAUL dataset
+        gaul = ee.FeatureCollection("FAO/GAUL/2015/level0")
+        
+        if level == 0:
+            return gaul
+        
+        elif level == 1:
+            admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+            if country_code:
+                return admin1.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin1
+        
+        elif level == 2:
+            admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+            if admin1_code:
+                return admin2.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
+            elif country_code:
+                return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin2
+        
+    except Exception as e:
+        st.error(f"Error loading boundaries: {str(e)}")
+        return None
+
+def get_boundary_names(feature_collection, level):
+    """
+    Extract boundary names from Earth Engine FeatureCollection
+    
+    Parameters:
+    - feature_collection: ee.FeatureCollection
+    - level: 0, 1, or 2
+    
+    Returns:
+    - List of boundary names
+    """
+    try:
+        if level == 0:
+            names = feature_collection.aggregate_array('ADM0_NAME').distinct()
+        elif level == 1:
+            names = feature_collection.aggregate_array('ADM1_NAME').distinct()
+        elif level == 2:
+            names = feature_collection.aggregate_array('ADM2_NAME').distinct()
+        else:
+            return []
+        
+        # Sort the names alphabetically
+        names_list = names.getInfo()
+        if names_list:
+            return sorted(names_list)
+        return []
+        
+    except Exception as e:
+        st.error(f"Error extracting names: {str(e)}")
+        return []
+
+def mask_clouds(image):
+    """
+    Mask clouds in Sentinel-2 imagery
+    """
+    try:
+        # Sentinel-2 cloud masking
+        qa = image.select('QA60')
+        cloud_bitmask = 1 << 10
+        cirrus_bitmask = 1 << 11
+        mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(
+            qa.bitwiseAnd(cirrus_bitmask).eq(0))
+        return image.updateMask(mask)
+    except Exception as e:
+        st.error(f"Error in cloud masking: {str(e)}")
+        return image
+
+def add_vegetation_indices(image):
+    """
+    Add vegetation indices to an image
+    """
+    try:
+        # Define band names based on collection
+        if 'SR_B2' in image.bandNames().getInfo():  # Landsat
+            blue = image.select('SR_B2')
+            green = image.select('SR_B3')
+            red = image.select('SR_B4')
+            nir = image.select('SR_B5')
+            swir1 = image.select('SR_B6')
+        else:  # Sentinel-2
+            blue = image.select('B2')
+            green = image.select('B3')
+            red = image.select('B4')
+            nir = image.select('B8')
+            swir1 = image.select('B11')
+        
+        # Calculate NDVI
+        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+        
+        # Calculate EVI
+        evi = image.expression(
+            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+            {
+                'NIR': nir,
+                'RED': red,
+                'BLUE': blue
+            }
+        ).rename('EVI')
+        
+        # Calculate SAVI
+        savi = image.expression(
+            '((NIR - RED) / (NIR + RED + 0.5)) * 1.5',
+            {
+                'NIR': nir,
+                'RED': red
+            }
+        ).rename('SAVI')
+        
+        # Calculate NDWI
+        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+        
+        return image.addBands([ndvi, evi, savi, ndwi])
+        
+    except Exception as e:
+        st.error(f"Error adding vegetation indices: {str(e)}")
+        return image
+
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
 <style>
@@ -142,19 +280,6 @@ st.markdown("""
         box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
     }
     
-    /* Primary button */
-    div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green)) !important;
-        color: var(--primary-black) !important;
-    }
-    
-    /* Secondary button */
-    div[data-testid="stButton"] button[kind="secondary"] {
-        background: transparent !important;
-        color: var(--primary-green) !important;
-        border: 1px solid var(--primary-green) !important;
-    }
-    
     /* Input fields */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
@@ -203,109 +328,6 @@ st.markdown("""
     .stMultiSelect > div > div > div {
         background: var(--secondary-black) !important;
         border: 1px solid var(--border-gray) !important;
-    }
-    
-    /* File uploader */
-    .stFileUploader > div {
-        border: 2px dashed var(--border-gray) !important;
-        border-radius: 6px !important;
-        background: var(--secondary-black) !important;
-    }
-    
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 5px;
-        background: var(--card-black);
-        padding: 5px;
-        border-radius: 8px;
-        border: 1px solid var(--border-gray);
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 6px;
-        padding: 8px 16px;
-        background: transparent;
-        color: var(--text-gray);
-        font-weight: 500;
-        transition: all 0.2s ease;
-        font-size: 14px;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: var(--primary-green) !important;
-        color: var(--primary-black) !important;
-    }
-    
-    /* Dataframes */
-    .dataframe {
-        background: var(--card-black) !important;
-        border: 1px solid var(--border-gray) !important;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-    
-    .dataframe th {
-        background: var(--secondary-black) !important;
-        color: var(--primary-green) !important;
-        font-weight: 600 !important;
-        border-color: var(--border-gray) !important;
-    }
-    
-    .dataframe td {
-        color: var(--text-light-gray) !important;
-        border-color: var(--border-gray) !important;
-    }
-    
-    /* Status badges */
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 12px;
-        background: rgba(0, 255, 136, 0.1);
-        color: var(--primary-green);
-        border: 1px solid rgba(0, 255, 136, 0.3);
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }
-    
-    /* Alert boxes */
-    .alert {
-        padding: 12px 16px;
-        border-radius: 8px;
-        margin: 10px 0;
-        border: 1px solid;
-        background: var(--card-black);
-        font-size: 14px;
-    }
-    
-    .alert-success {
-        border-color: rgba(0, 255, 136, 0.3);
-        color: var(--primary-green);
-    }
-    
-    .alert-warning {
-        border-color: rgba(255, 170, 0, 0.3);
-        color: #ffaa00;
-    }
-    
-    .alert-error {
-        border-color: rgba(255, 68, 68, 0.3);
-        color: #ff4444;
-    }
-    
-    /* Compact form layout */
-    .form-row {
-        margin-bottom: 15px;
-    }
-    
-    .form-label {
-        color: var(--text-gray);
-        font-size: 13px;
-        font-weight: 500;
-        margin-bottom: 5px;
-        display: block;
     }
     
     /* Map container */
@@ -372,19 +394,43 @@ st.markdown("""
         background-color: transparent !important;
     }
     
-    /* Section divider */
-    .section-divider {
-        height: 1px;
-        background: var(--border-gray);
-        margin: 25px 0;
+    /* Status badges */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        background: rgba(0, 255, 136, 0.1);
+        color: var(--primary-green);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
     }
     
-    /* Compact header */
-    .compact-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 20px;
+    /* Alert boxes */
+    .alert {
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin: 10px 0;
+        border: 1px solid;
+        background: var(--card-black);
+        font-size: 14px;
+    }
+    
+    .alert-success {
+        border-color: rgba(0, 255, 136, 0.3);
+        color: var(--primary-green);
+    }
+    
+    .alert-warning {
+        border-color: rgba(255, 170, 0, 0.3);
+        color: #ffaa00;
+    }
+    
+    .alert-error {
+        border-color: rgba(255, 68, 68, 0.3);
+        color: #ff4444;
     }
     
     /* Info panel */
@@ -411,18 +457,6 @@ st.markdown("""
         color: var(--text-white);
         font-size: 14px;
         font-weight: 500;
-    }
-    
-    /* Analysis status */
-    .analysis-status {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 15px;
-        background: rgba(0, 255, 136, 0.05);
-        border: 1px solid rgba(0, 255, 136, 0.2);
-        border-radius: 8px;
-        margin: 15px 0;
     }
     
     /* View toggle */
@@ -525,18 +559,6 @@ if 'ee_auto_initialized' not in st.session_state:
             st.session_state.ee_auto_initialized = False
             st.session_state.ee_initialized = False
 
-# Initialize session state for map
-if 'map_view' not in st.session_state:
-    st.session_state.map_view = "satellite"  # "satellite", "street", "terrain", "dark"
-
-# Page configuration
-st.set_page_config(
-    page_title="Khisba GIS - Interactive Global Vegetation Analysis",
-    page_icon="🌍",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
@@ -548,6 +570,18 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'map_view' not in st.session_state:
+    st.session_state.map_view = "satellite"
+if 'fly_to_region' not in st.session_state:
+    st.session_state.fly_to_region = None
+
+# Page configuration
+st.set_page_config(
+    page_title="Khisba GIS - Interactive Global Vegetation Analysis",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -560,10 +594,6 @@ if not st.session_state.authenticated:
                 
                 <div class="alert alert-warning" style="text-align: center;">
                     🔐 Authentication Required
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-label">Password</div>
                 </div>
             </div>
         </div>
@@ -588,11 +618,6 @@ if not st.session_state.authenticated:
             <div class="card">
                 <p style="text-align: center; color: #00ff88; font-weight: 600; margin-bottom: 10px;">Demo Access</p>
                 <p style="text-align: center; color: #999999;">Use <strong>admin</strong> / <strong>admin</strong> for demo</p>
-                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px;">
-                    <span class="status-badge">Interactive Globe</span>
-                    <span class="status-badge">GIS Analytics</span>
-                    <span class="status-badge">Satellite Data</span>
-                </div>
             </div>
         </div>
     </div>
@@ -646,75 +671,83 @@ with col1:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown('<div class="card-title"><div class="icon">🌍</div><h3 style="margin: 0;">Area Selection</h3></div>', unsafe_allow_html=True)
     
-    # Import the helper functions
-    try:
-        from earth_engine_utils import get_admin_boundaries, get_boundary_names
-        from vegetation_indices import mask_clouds, add_vegetation_indices
-    except ImportError as e:
-        st.error(f"Error importing helper modules: {str(e)}")
-        st.info("Please ensure earth_engine_utils.py and vegetation_indices.py are in the same directory")
-        st.stop()
-    
     if st.session_state.ee_initialized:
-        # Country selection
         try:
+            # Get countries
             countries_fc = get_admin_boundaries(0)
-            if countries_fc is not None:
+            if countries_fc:
                 country_names = get_boundary_names(countries_fc, 0)
                 selected_country = st.selectbox(
                     "Country",
-                    options=[""] + country_names,
+                    options=["Select a country"] + country_names,
+                    index=0,
                     help="Choose a country for analysis",
                     key="country_select"
                 )
+                
+                if selected_country and selected_country != "Select a country":
+                    # Get country code
+                    country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
+                    
+                    # Get admin1 regions for selected country
+                    admin1_fc = get_admin_boundaries(1, country_feature.get('ADM0_CODE').getInfo())
+                    if admin1_fc:
+                        admin1_names = get_boundary_names(admin1_fc, 1)
+                        selected_admin1 = st.selectbox(
+                            "State/Province",
+                            options=["Select state/province"] + admin1_names,
+                            index=0,
+                            help="Choose a state or province",
+                            key="admin1_select"
+                        )
+                        
+                        if selected_admin1 and selected_admin1 != "Select state/province":
+                            # Get admin1 code
+                            admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
+                            
+                            # Get admin2 regions for selected admin1
+                            admin2_fc = get_admin_boundaries(2, None, admin1_feature.get('ADM1_CODE').getInfo())
+                            if admin2_fc:
+                                admin2_names = get_boundary_names(admin2_fc, 2)
+                                selected_admin2 = st.selectbox(
+                                    "Municipality",
+                                    options=["Select municipality"] + admin2_names,
+                                    index=0,
+                                    help="Choose a municipality",
+                                    key="admin2_select"
+                                )
+                            else:
+                                selected_admin2 = None
+                        else:
+                            selected_admin2 = None
+                    else:
+                        selected_admin1 = None
+                        selected_admin2 = None
+                        st.warning("No admin1 regions found for this country")
+                else:
+                    selected_admin1 = None
+                    selected_admin2 = None
             else:
-                st.error("Failed to load countries data")
-                selected_country = ""
+                st.error("Failed to load countries. Please check Earth Engine connection.")
+                selected_country = None
+                selected_admin1 = None
+                selected_admin2 = None
+                
         except Exception as e:
-            st.error(f"Error loading countries: {str(e)}")
-            selected_country = ""
-        
-        # Admin1 selection
-        selected_admin1 = ""
-        if selected_country and countries_fc is not None:
-            try:
-                country_feature = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country)).first()
-                country_code = country_feature.get('ADM0_CODE').getInfo()
-                
-                admin1_fc = get_admin_boundaries(1, country_code)
-                if admin1_fc is not None:
-                    admin1_names = get_boundary_names(admin1_fc, 1)
-                    selected_admin1 = st.selectbox(
-                        "State/Province",
-                        options=[""] + admin1_names,
-                        help="Choose a state or province",
-                        key="admin1_select"
-                    )
-            except Exception as e:
-                st.error(f"Error loading admin1: {str(e)}")
-        
-        # Admin2 selection
-        selected_admin2 = ""
-        if selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
-            try:
-                admin1_feature = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1)).first()
-                admin1_code = admin1_feature.get('ADM1_CODE').getInfo()
-                
-                admin2_fc = get_admin_boundaries(2, None, admin1_code)
-                if admin2_fc is not None:
-                    admin2_names = get_boundary_names(admin2_fc, 2)
-                    selected_admin2 = st.selectbox(
-                        "Municipality",
-                        options=[""] + admin2_names,
-                        help="Choose a municipality",
-                        key="admin2_select"
-                    )
-            except Exception as e:
-                st.error(f"Error loading admin2: {str(e)}")
+            st.error(f"Error loading boundaries: {str(e)}")
+            selected_country = None
+            selected_admin1 = None
+            selected_admin2 = None
+    else:
+        st.warning("Earth Engine not initialized")
+        selected_country = None
+        selected_admin1 = None
+        selected_admin2 = None
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Analysis Parameters Card
-    if selected_country:
+    if selected_country and selected_country != "Select a country":
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">⚙️</div><h3 style="margin: 0;">Analysis Settings</h3></div>', unsafe_allow_html=True)
         
@@ -755,12 +788,7 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
         
-        available_indices = [
-            'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
-            'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
-            'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
-            'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
-        ]
+        available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI']
         
         selected_indices = st.multiselect(
             "Select Indices",
@@ -770,15 +798,6 @@ with col1:
             key="indices_select"
         )
         
-        col_c, col_d = st.columns(2)
-        with col_c:
-            if st.button("Select All", use_container_width=True, key="select_all"):
-                selected_indices = available_indices
-                st.rerun()
-        with col_d:
-            if st.button("Clear All", use_container_width=True, key="clear_all"):
-                selected_indices = []
-                st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Quick Navigation Card
@@ -814,6 +833,16 @@ with col1:
             else:
                 with st.spinner("Running analysis..."):
                     try:
+                        # Get the selected geometry
+                        if selected_admin2 and selected_admin2 != "Select municipality":
+                            geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                        elif selected_admin1 and selected_admin1 != "Select state/province":
+                            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                        else:
+                            geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                        
+                        st.session_state.selected_geometry = geometry
+                        
                         # Define collection based on choice
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -823,7 +852,7 @@ with col1:
                         # Filter collection
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                            .filterBounds(st.session_state.selected_geometry)
+                            .filterBounds(geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
@@ -843,8 +872,8 @@ with col1:
                                 def add_date_and_reduce(image):
                                     reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
-                                        geometry=st.session_state.selected_geometry.geometry(),
-                                        scale=30,
+                                        geometry=geometry.geometry(),
+                                        scale=100,
                                         maxPixels=1e9
                                     )
                                     return ee.Feature(None, reduced.set('date', image.date().format()))
@@ -911,32 +940,6 @@ with col2:
           width: 100%; 
           border-radius: 8px;
         }}
-        .mapboxgl-popup {{
-          max-width: 300px;
-        }}
-        .mapboxgl-popup-content {{
-          background: #0a0a0a;
-          color: #ffffff;
-          border: 1px solid #222222;
-          border-radius: 8px;
-          padding: 15px;
-          font-family: 'Inter', sans-serif;
-        }}
-        .mapboxgl-popup-content h3 {{
-          color: #00ff88;
-          margin: 0 0 10px 0;
-          font-size: 16px;
-        }}
-        .mapboxgl-popup-content p {{
-          margin: 0;
-          color: #cccccc;
-          font-size: 14px;
-        }}
-        .mapboxgl-popup-close-button {{
-          color: #ffffff;
-          font-size: 16px;
-          padding: 8px;
-        }}
         .info-panel {{
           position: absolute;
           top: 20px;
@@ -999,8 +1002,8 @@ with col2:
         const map = new mapboxgl.Map({{
           container: 'map',
           style: '{map_styles[st.session_state.map_view]}',
-          center: [-95.7129, 37.0902], // Center of USA
-          zoom: 3,
+          center: [0, 20], // Global view
+          zoom: 2,
           pitch: 0,
           bearing: 0
         }});
@@ -1016,13 +1019,12 @@ with col2:
         // Add fullscreen control
         map.addControl(new mapboxgl.FullscreenControl());
 
-        // List of major cities with their coordinates and names
+        // List of major cities
         const cities = [
-          {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital of the world' }},
+          {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
           {{ name: 'Los Angeles', coordinates: [-118.2437, 34.0522], country: 'USA', info: 'Entertainment capital' }},
           {{ name: 'Chicago', coordinates: [-87.6298, 41.8781], country: 'USA', info: 'Windy City' }},
           {{ name: 'Houston', coordinates: [-95.3698, 29.7604], country: 'USA', info: 'Space City' }},
-          {{ name: 'Phoenix', coordinates: [-112.074, 33.4484], country: 'USA', info: 'Valley of the Sun' }},
           {{ name: 'Paris', coordinates: [2.3522, 48.8566], country: 'France', info: 'City of Light' }},
           {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
           {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
@@ -1041,7 +1043,7 @@ with col2:
           europe: {{ center: [15.2551, 54.5260], zoom: 3 }},
           asia: {{ center: [104.1954, 35.8617], zoom: 2 }},
           americas: {{ center: [-58.3816, -14.2350], zoom: 2 }},
-          reset: {{ center: [0, 20], zoom: 1 }}
+          reset: {{ center: [0, 20], zoom: 2 }}
         }};
 
         // Wait for map to load
@@ -1079,10 +1081,7 @@ with col2:
             }}).setHTML(
               `<h3>${{city.name}}</h3>
                <p><strong>Country:</strong> ${{city.country}}</p>
-               <p>${{city.info}}</p>
-               <p><strong>Coordinates:</strong><br>
-               Lat: ${{city.coordinates[1].toFixed(4)}}°<br>
-               Lon: ${{city.coordinates[0].toFixed(4)}}°</p>`
+               <p>${{city.info}}</p>`
             );
 
             // Create marker
@@ -1159,20 +1158,6 @@ with col2:
             localStorage.removeItem('flyToRegion');
           }}
         }});
-
-        // Handle region fly from Streamlit
-        function flyToRegion(region) {{
-          if (regions[region]) {{
-            const {{ center, zoom }} = regions[region];
-            
-            map.flyTo({{
-              center: center,
-              zoom: zoom,
-              duration: 2000,
-              essential: true
-            }});
-          }}
-        }}
       </script>
     </body>
     </html>
@@ -1195,15 +1180,15 @@ with col2:
         # Clear after sending
         st.session_state.fly_to_region = None
     
-    # Area info at bottom of map
-    if selected_country:
+    # Display selected area info
+    if selected_country and selected_country != "Select a country":
         try:
             # Determine geometry
-            if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
+            if selected_admin2 and selected_admin2 != "Select municipality":
                 geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
                 area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
                 area_level = "Municipality"
-            elif selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
+            elif selected_admin1 and selected_admin1 != "Select state/province":
                 geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
                 area_name = f"{selected_admin1}, {selected_country}"
                 area_level = "State/Province"
@@ -1212,14 +1197,13 @@ with col2:
                 area_name = selected_country
                 area_level = "Country"
             
+            # Get bounds
             bounds = geometry.geometry().bounds().getInfo()
             coords = bounds['coordinates'][0]
             lats = [coord[1] for coord in coords]
             lons = [coord[0] for coord in coords]
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
-            
-            st.session_state.selected_geometry = geometry
             
             st.markdown(f"""
             <div class="info-panel">
@@ -1281,124 +1265,41 @@ with col2:
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Charts Section
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
-        
-        # Chart controls
-        col_x, col_y = st.columns([3, 1])
-        with col_x:
-            indices_to_plot = st.multiselect(
-                "Select Indices to Plot",
-                options=list(results.keys()),
-                default=list(results.keys())[:4] if len(results) >= 4 else list(results.keys()),
-                help="Choose vegetation indices to plot",
-                key="chart_indices"
-            )
-        with col_y:
-            chart_style = st.selectbox(
-                "Chart Style",
-                ["Professional", "Statistical", "Area"],
-                help="Select chart visualization style",
-                key="chart_style"
-            )
-        
-        # Generate charts
-        if indices_to_plot:
-            for index in indices_to_plot:
-                data = results[index]
+        if results:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
+            
+            for index, data in results.items():
                 if data['dates'] and data['values']:
                     try:
-                        dates = [datetime.fromisoformat(d.replace('Z', '+00:00')) for d in data['dates']]
+                        # Parse dates
+                        dates = []
+                        for date_str in data['dates']:
+                            try:
+                                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                dates.append(date_obj)
+                            except:
+                                continue
+                        
                         values = [v for v in data['values'] if v is not None]
                         
                         if dates and values and len(dates) == len(values):
                             df = pd.DataFrame({'Date': dates, 'Value': values})
                             df = df.sort_values('Date')
                             
-                            # Calculate analytical metrics
-                            df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
-                            df['MA_10'] = df['Value'].rolling(window=min(10, len(df))).mean()
-                            df['Value_Change'] = df['Value'].pct_change()
-                            
                             # Create chart
                             fig = go.Figure()
                             
-                            current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
-                            prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
-                            is_increasing = current_value >= prev_value
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Value'],
+                                mode='lines+markers',
+                                name=f'{index} Index',
+                                line=dict(color='#00ff88', width=3),
+                                marker=dict(size=6),
+                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                            ))
                             
-                            if chart_style == "Professional":
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    mode='lines',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
-                                    hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
-                                ))
-                            elif chart_style == "Statistical":
-                                df['Upper_Bound'] = df['Value'] * 1.05
-                                df['Lower_Bound'] = df['Value'] * 0.95
-                                
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Upper_Bound'],
-                                    mode='lines',
-                                    line=dict(width=0),
-                                    showlegend=False,
-                                    hoverinfo='skip'
-                                ))
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Lower_Bound'],
-                                    mode='lines',
-                                    line=dict(width=0),
-                                    fill='tonexty',
-                                    fillcolor='rgba(0,255,136,0.1)',
-                                    name='Confidence Band',
-                                    hoverinfo='skip'
-                                ))
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    mode='lines+markers',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88', width=2),
-                                    marker=dict(size=4)
-                                ))
-                            elif chart_style == "Area":
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    fill='tozeroy',
-                                    mode='lines',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88' if is_increasing else '#ff4444', width=2),
-                                    fillcolor=f"rgba({'0,255,136' if is_increasing else '255,68,68'}, 0.3)"
-                                ))
-                            
-                            # Add moving averages
-                            if len(df) >= 5:
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['MA_5'],
-                                    mode='lines',
-                                    name='MA 5-day',
-                                    line=dict(color='#ffaa00', width=1, dash='dot'),
-                                    opacity=0.7
-                                ))
-                            
-                            if len(df) >= 10:
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['MA_10'],
-                                    mode='lines',
-                                    name='MA 10-day',
-                                    line=dict(color='#aa00ff', width=1, dash='dash'),
-                                    opacity=0.7
-                                ))
-                            
-                            # Update layout
                             fig.update_layout(
                                 title=f'{index} - Vegetation Analysis',
                                 plot_bgcolor='#0a0a0a',
@@ -1416,57 +1317,16 @@ with col2:
                                     tickcolor='#444444',
                                     title_font_color='#ffffff'
                                 ),
-                                legend=dict(
-                                    bgcolor='rgba(0,0,0,0.5)',
-                                    bordercolor='#222222',
-                                    borderwidth=1
-                                ),
                                 hovermode='x unified',
-                                height=350,
+                                height=300,
                                 margin=dict(t=50, b=50, l=50, r=50)
                             )
                             
-                            # Display chart
                             st.plotly_chart(fig, use_container_width=True)
                             
                     except Exception as e:
                         st.error(f"Error creating chart for {index}: {str(e)}")
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Export Section
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Data Export</h3></div>', unsafe_allow_html=True)
-        
-        if st.button("📥 Download Results as CSV", type="primary", use_container_width=True, key="export_csv"):
-            export_data = []
-            for index, data in results.items():
-                for date, value in zip(data['dates'], data['values']):
-                    if value is not None:
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-            
-            if export_data:
-                export_df = pd.DataFrame(export_data)
-                csv = export_df.to_csv(index=False)
-                
-                st.download_button(
-                    label="Download CSV File",
-                    data=csv,
-                    file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No data available for export")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# Status indicators at bottom
-if not st.session_state.ee_initialized:
-    st.markdown('<div class="alert alert-warning">👆 Earth Engine initialization required. Please upload credentials.</div>', unsafe_allow_html=True)
-elif st.session_state.selected_geometry is None:
-    st.markdown('<div class="alert alert-warning">👆 Please select a study area to begin analysis.</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
@@ -1474,11 +1334,5 @@ st.markdown("""
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
     <p style="margin: 5px 0;">KHISBA GIS • Interactive Global Vegetation Analytics Platform</p>
     <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
-    <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span class="status-badge">Mapbox GL JS</span>
-        <span class="status-badge">Earth Engine</span>
-        <span class="status-badge">Streamlit</span>
-        <span class="status-badge">Interactive Globe</span>
-    </div>
 </div>
 """, unsafe_allow_html=True)
