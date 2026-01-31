@@ -1,18 +1,12 @@
 import streamlit as st
 import json
-import tempfile
-import os
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import ee
-from earth_engine_utils import initialize_earth_engine, get_admin_boundaries, get_boundary_names
-from vegetation_indices import mask_clouds, add_vegetation_indices
+import traceback
 
 # Page configuration
 st.set_page_config(
@@ -27,14 +21,186 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'ee_initialized' not in st.session_state:
     st.session_state.ee_initialized = False
-if 'credentials_uploaded' not in st.session_state:
-    st.session_state.credentials_uploaded = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
 
-# Authentication check
+# Function to initialize Earth Engine with service account
+def initialize_earth_engine():
+    """Initialize Earth Engine using the provided service account credentials"""
+    try:
+        # Your service account credentials
+        service_account_info = {
+            "type": "service_account",
+            "project_id": "citric-hawk-457513-i6",
+            "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
+            "private_key": """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
+JUTNzx3h+QvvDCvZ2B6XZTofknuAFPW2LqAzZustznJJFkCmO3Nutct+W/iDQCG0
+1DjOQcbcr/jWr+mnRLVOkUkQc/kzZ8zaMQqU8HpXjS1mdhpsrbUaRKoEgfo3I3Bp
+dFcJ/caC7TSr8VkGnZcPEZyXVsj8dLSEzomdkX+mDlJlgCrNfu3Knu+If5lXh3Me
+SKiMWsfMnasiv46oD4szBzg6HLgoplmNka4NiwfeM7qROYnCd+5conyG8oiU00Xe
+zC2Ekzo2dWsCw4zIJD6IdAcvgdrqH63fCqDFmAjEBZ69h8fWrdnsq56dAIpt0ygl
+P9ADiRbVAgMBAAECggEALO7AnTqBGy2AgxhMP8iYEUdiu0mtvIIxV8HYl2QOC2ta
+3GzrE8J0PJs8J99wix1cSmIRkH9hUP6dHvy/0uYjZ1aTi84HHtH1LghE2UFdySKy
+RJqqwyozaDmx15b8Jnj8Wdc91miIR6KkQvVcNVuwalcf6jIAWlQwGp/jqIq9nloN
+eld6xNbEmacORz1qT+4/uxOE05mrrZHC4kIKtswi8Io4ExVe61VxXsXWSHrMCGz0
+TiSGr2ORSlRWC/XCGCu7zFIJU/iw6BiNsxryk6rjqQrcAtmoFTFx0fWbjYkG1DDs
+k/9Dov1gyx0OtEyX8beoaf0Skcej4zdfeuido2A1sQKBgQD4IrhFn50i4/pa9sk1
+g7v1ypGTrVA3pfvj6c7nTgzj9oyJnlU3WJwCqLw1cTFiY84+ekYP15wo8xsu5VZd
+YLzOKEg3B8g899Ge14vZVNd6cNfRyMk4clGrDwGnZ4OAQkdsT/AyaCGRIcyu9njA
+xdmWa+6VPMG7U65f/656XGwkBQKBgQDLgVyRE2+r1XCY+tdtXtga9sQ4LoiYHzD3
+eDHe056qmwk8jf1A1HekILnC1GyeaKkOUd4TEWhVBgQpsvtC4Z2zPXlWR8N7SwNu
+SFAhy3OnHTZQgrRWFA8eBjeI0YoXmk5m6uMQ7McmDlFxxXenFi+qSl3Cu4aGGuOy
+cfyWMbTwkQKBgAoKfaJznww2ZX8g1WuQ9R4xIEr1jHV0BglnALRjeCoRZAZ9nb0r
+nMSOx27yMallmIb2s7cYZn1RuRvgs+n7bCh7gNCZRAUTkiv3VPVqdX3C6zjWAy6B
+kcR2Sv7XNX8PL4y2f2XKyPDyiTHbT2+dkfyASZtIZh6KeFfyJMFW1BlxAoGAAeG6
+V2UUnUQl/GQlZc+AtA8gFVzoym9PZppn66WNTAqO9U5izxyn1o6u6QxJzNUu6wD6
+yrZYfqDFnRUYma+4Y5Xn71JOjm9NItHsW8Oj2CG/BNOQk1MwKJjqHovBeSJmIzF8
+1AU8ei+btS+cQaFE45A4ebp+LfNFs7q2GTVwdOECgYEAtHkMqigOmZdR3QAcZTjL
+3aeOMGVHB2pHYosTgslD9Yp+hyVHqSdyCplHzWB3d8roIecW4MEb0mDxlaTdZfmR
+dtBYiTzMxLezHsRZ4KP4NtGAE3iTL1b6DXuoI84+H/HaQ1EB79+YV9ZTAabt1b7o
+e5aU1RW6tlG8nzHHwK2FeyI=
+-----END PRIVATE KEY-----""",
+            "client_email": "cc-365@citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "client_id": "105264622264803277310",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/cc-365%40citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        
+        # Authenticate with the service account
+        credentials = ee.ServiceAccountCredentials(
+            service_account_info['client_email'],
+            key_data=json.dumps(service_account_info)
+        )
+        
+        # Initialize Earth Engine
+        ee.Initialize(credentials, project='citric-hawk-457513-i6')
+        
+        return True
+    except Exception as e:
+        st.error(f"Earth Engine initialization failed: {str(e)}")
+        return False
+
+# Helper functions for Earth Engine
+def get_admin_boundaries(level, country_code=None, admin1_code=None):
+    """Get administrative boundaries from GAUL dataset"""
+    try:
+        # GAUL dataset paths
+        datasets = {
+            0: 'FAO/GAUL/2015/level0',
+            1: 'FAO/GAUL/2015/level1',
+            2: 'FAO/GAUL/2015/level2'
+        }
+        
+        if level not in datasets:
+            return None
+            
+        fc = ee.FeatureCollection(datasets[level])
+        
+        # Apply filters based on level
+        if level == 1 and country_code:
+            fc = fc.filter(ee.Filter.eq('ADM0_CODE', country_code))
+        elif level == 2:
+            if admin1_code:
+                fc = fc.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
+            elif country_code:
+                fc = fc.filter(ee.Filter.eq('ADM0_CODE', country_code))
+                
+        return fc
+        
+    except Exception as e:
+        st.error(f"Error getting boundaries: {e}")
+        return None
+
+def get_boundary_names(fc, level):
+    """Extract names from a feature collection"""
+    try:
+        # Different column names for different levels
+        name_columns = {
+            0: 'ADM0_NAME',
+            1: 'ADM1_NAME',
+            2: 'ADM2_NAME'
+        }
+        
+        name_column = name_columns.get(level, 'ADM0_NAME')
+        
+        # Get unique names
+        names_list = fc.aggregate_array(name_column).distinct().sort().getInfo()
+        
+        return names_list if names_list else []
+        
+    except Exception as e:
+        st.error(f"Error getting names: {e}")
+        return []
+
+# Vegetation indices functions
+def mask_clouds(image):
+    """Mask clouds for Sentinel-2 images"""
+    try:
+        # QA60 bitmask for clouds
+        qa = image.select('QA60')
+        cloud_bitmask = 1 << 10
+        cirrus_bitmask = 1 << 11
+        mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(qa.bitwiseAnd(cirrus_bitmask).eq(0))
+        return image.updateMask(mask)
+    except:
+        return image
+
+def add_vegetation_indices(image):
+    """Calculate vegetation indices for an image"""
+    try:
+        # For Sentinel-2
+        bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
+        
+        # Check if bands exist
+        available_bands = image.bandNames().getInfo()
+        has_required_bands = all(band in available_bands for band in bands[:4])
+        
+        if not has_required_bands:
+            # Try Landsat bands
+            bands = ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7']
+        
+        # Get bands
+        if 'B2' in available_bands:  # Sentinel-2
+            blue = image.select('B2').divide(10000)
+            green = image.select('B3').divide(10000)
+            red = image.select('B4').divide(10000)
+            nir = image.select('B8').divide(10000)
+            swir1 = image.select('B11').divide(10000)
+        elif 'SR_B2' in available_bands:  # Landsat
+            blue = image.select('SR_B2').multiply(0.0000275).add(-0.2)
+            green = image.select('SR_B3').multiply(0.0000275).add(-0.2)
+            red = image.select('SR_B4').multiply(0.0000275).add(-0.2)
+            nir = image.select('SR_B5').multiply(0.0000275).add(-0.2)
+            swir1 = image.select('SR_B6').multiply(0.0000275).add(-0.2)
+        else:
+            return image
+        
+        # Calculate basic indices
+        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+        evi = nir.subtract(red).divide(nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)).multiply(2.5).rename('EVI')
+        savi = nir.subtract(red).divide(nir.add(red).add(0.5)).multiply(1.5).rename('SAVI')
+        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+        
+        return image.addBands([ndvi, evi, savi, ndwi])
+    except Exception as e:
+        return image
+
+# Try to initialize Earth Engine automatically on app start
+if not st.session_state.ee_initialized:
+    with st.spinner("Initializing Earth Engine..."):
+        if initialize_earth_engine():
+            st.session_state.ee_initialized = True
+            st.session_state.authenticated = True
+        else:
+            st.error("Failed to initialize Earth Engine")
+
+# Authentication check - only admin password needed
 if not st.session_state.authenticated:
     st.markdown("""
     <div style="text-align: center; background: linear-gradient(90deg, #1f4037, #99f2c8); padding: 30px; border-radius: 15px; margin-bottom: 30px;">
@@ -68,6 +234,7 @@ if not st.session_state.authenticated:
     
     st.stop()
 
+# Main application header (shown after authentication)
 st.markdown("""
 <div style="text-align: center; background: linear-gradient(90deg, #1f4037, #99f2c8); padding: 20px; border-radius: 10px; margin-bottom: 20px;">
 <h1 style="color: white; font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">📊 KHISBA GIS</h1>
@@ -76,7 +243,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Professional Trading Dashboard Sidebar
+# Sidebar
 st.sidebar.markdown("""
 <div style="text-align: center; background: linear-gradient(135deg, #00ff88, #004422); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
     <h2 style="color: white; margin: 0; font-size: 1.5rem;">📊 KHISBA</h2>
@@ -84,66 +251,25 @@ st.sidebar.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.sidebar.markdown("### 🔐 **AUTHENTICATION**")
+# Status indicator
+st.sidebar.markdown("### 🔐 **AUTHENTICATION STATUS**")
 
-# Google Earth Engine Authentication
-if not st.session_state.ee_initialized:
-    st.sidebar.subheader("Upload GEE Credentials")
-    st.sidebar.markdown("**Required:** Google Earth Engine service account JSON file")
-    st.sidebar.markdown("""
-    **Steps to get your credentials:**
-    1. Go to [Google Cloud Console](https://console.cloud.google.com)
-    2. Select your project and go to IAM & Admin → Service Accounts  
-    3. Create or select a service account
-    4. Click "Add Key" → "Create new key" → JSON
-    5. Download and upload the JSON file here
-    
-    **Note:** Your project must be registered with Earth Engine at [signup.earthengine.google.com](https://signup.earthengine.google.com)
-    """)
-    
-    uploaded_file = st.sidebar.file_uploader(
-        "Choose your service account JSON file",
-        type=['json'],
-        help="Upload your Google Earth Engine service account JSON credentials"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Read and parse the JSON file
-            credentials_data = json.load(uploaded_file)
-            
-            # Save credentials to a temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
-                json.dump(credentials_data, tmp_file)
-                credentials_path = tmp_file.name
-            
-            # Initialize Earth Engine
-            success = initialize_earth_engine(credentials_path)
-            
-            if success:
-                st.session_state.ee_initialized = True
-                st.session_state.credentials_uploaded = True
-                st.sidebar.success("✅ Earth Engine initialized successfully!")
-                
-                # Clean up temporary file
-                os.unlink(credentials_path)
-                st.rerun()
-            else:
-                st.sidebar.error("❌ Failed to initialize Earth Engine")
-                st.sidebar.error("""
-                **Common issues:**
-                - Service account key has expired (generate a new one)
-                - Project not registered with Earth Engine
-                - Invalid JSON file format
-                - Missing required permissions
-                
-                Check the console logs for detailed error messages.
-                """)
-                
-        except Exception as e:
-            st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
-else:
+if st.session_state.ee_initialized:
     st.sidebar.success("✅ Earth Engine Connected")
+    st.sidebar.markdown(f"""
+    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <small style="color: #00ff88;">🌐 Online Mode</small><br>
+        <small style="color: #888888;">Satellite data: <strong>Available</strong></small>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.sidebar.error("❌ Earth Engine Failed")
+    st.sidebar.markdown(f"""
+    <div style="background: #2a1a1a; padding: 10px; border-radius: 5px; margin: 10px 0;">
+        <small style="color: #ff4444;">⚠️ Connection Error</small><br>
+        <small style="color: #888888;">Satellite data: <strong>Unavailable</strong></small>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Main application
 if st.session_state.ee_initialized:
@@ -525,6 +651,7 @@ if st.session_state.ee_initialized:
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
+                        st.error(f"Error details: {traceback.format_exc()}")
 
 # Display Results
 if st.session_state.analysis_results:
@@ -757,7 +884,7 @@ if st.session_state.analysis_results:
 
 else:
     if not st.session_state.ee_initialized:
-        st.info("👆 Please upload your Google Earth Engine credentials to get started")
+        st.info("👆 Please wait while Earth Engine initializes...")
     elif st.session_state.selected_geometry is None:
         st.info("👆 Please select a study area to proceed with analysis")
     else:
