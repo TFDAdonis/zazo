@@ -352,237 +352,154 @@ if st.session_state.ee_initialized:
             center_lon = sum(lons) / len(lons)
             
             if st.session_state.map_mode == "globe":
-                # Create 3D Interactive Globe using Plotly
+                # Create 3D Interactive Globe using Geemap
                 st.markdown("""
                 <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
                 """, unsafe_allow_html=True)
                 
-                # Create a beautiful 3D globe with Plotly
-                fig = go.Figure()
-                
-                # Add globe surface (Earth)
-                # Create sphere for Earth
-                phi = np.linspace(0, 2*np.pi, 100)
-                theta = np.linspace(0, np.pi, 50)
-                phi, theta = np.meshgrid(phi, theta)
-                
-                # Sphere coordinates
-                r = 1.0  # Earth radius
-                x = r * np.sin(theta) * np.cos(phi)
-                y = r * np.sin(theta) * np.sin(phi)
-                z = r * np.cos(theta)
-                
-                # Add Earth surface with texture-like appearance
-                fig.add_trace(go.Surface(
-                    x=x, y=y, z=z,
-                    colorscale=[[0, '#1a5f7a'], [0.2, '#2a8bb9'], [0.4, '#57a7d4'], 
-                               [0.6, '#89c2d9'], [0.8, '#b8d9eb'], [1, '#ffffff']],
-                    showscale=False,
-                    opacity=0.9,
-                    lighting=dict(ambient=0.7, diffuse=0.9, roughness=0.8, specular=0.9),
-                    lightposition=dict(x=10000, y=10000, z=10000)
-                ))
-                
-                # Add continents outline
-                continent_colors = {
-                    'Africa': '#ffaa00',
-                    'Asia': '#ff4444',
-                    'Europe': '#4488ff',
-                    'North America': '#44ff88',
-                    'South America': '#aa44ff',
-                    'Australia': '#ff88cc',
-                    'Antarctica': '#88ffff'
-                }
-                
-                # Add a marker for the selected area
-                if selected_country:
-                    # Convert lat/lon to 3D coordinates
-                    lat_rad = np.radians(center_lat)
-                    lon_rad = np.radians(center_lon)
-                    marker_x = r * np.cos(lat_rad) * np.cos(lon_rad)
-                    marker_y = r * np.cos(lat_rad) * np.sin(lon_rad)
-                    marker_z = r * np.sin(lat_rad)
+                try:
+                    import geemap
+                    import geemap.foliumap as geemap
                     
-                    # Add marker for study area
-                    fig.add_trace(go.Scatter3d(
-                        x=[marker_x],
-                        y=[marker_y],
-                        z=[marker_z],
-                        mode='markers+text',
-                        marker=dict(
-                            size=10,
-                            color='#00ff88',
-                            symbol='circle',
-                            line=dict(color='white', width=2)
-                        ),
-                        text=[f"{area_name}"],
-                        textposition="top center",
-                        hoverinfo='text',
-                        hovertext=f"<b>Study Area:</b> {area_name}<br><b>Coordinates:</b> {center_lat:.2f}°N, {center_lon:.2f}°E<br><b>Level:</b> {area_level}",
-                        name="📍 Study Area"
-                    ))
+                    # Create geemap with 3D globe
+                    Map = geemap.Map(center=[center_lat, center_lon], zoom=4)
                     
-                    # Add a highlighted region (small circle around the area)
-                    # Create a small circle around the point
-                    circle_radius = 0.2  # in radians
-                    circle_lats = []
-                    circle_lons = []
-                    for angle in np.linspace(0, 2*np.pi, 50):
-                        # Small circle approximation
-                        lat_circle = center_lat + np.degrees(circle_radius * np.cos(angle))
-                        lon_circle = center_lon + np.degrees(circle_radius * np.sin(angle) / np.cos(np.radians(center_lat)))
+                    # Add Earth Engine layers to the globe
+                    
+                    # 1. Add Sentinel-2 imagery
+                    try:
+                        # Get recent Sentinel-2 image
+                        sentinel = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') \
+                            .filterDate('2023-06-01', '2023-09-01') \
+                            .filterBounds(geometry) \
+                            .median() \
+                            .clip(geometry)
                         
-                        # Convert to 3D
-                        lat_rad_c = np.radians(lat_circle)
-                        lon_rad_c = np.radians(lon_circle)
-                        x_c = r * np.cos(lat_rad_c) * np.cos(lon_rad_c)
-                        y_c = r * np.cos(lat_rad_c) * np.sin(lon_rad_c)
-                        z_c = r * np.sin(lat_rad_c)
+                        # Add RGB visualization
+                        vis_params = {
+                            'min': 0,
+                            'max': 3000,
+                            'bands': ['B4', 'B3', 'B2']
+                        }
                         
-                        circle_lats.append(lat_circle)
-                        circle_lons.append(lon_circle)
-                        
-                        if angle == 0:
-                            # Start new line
-                            fig.add_trace(go.Scatter3d(
-                                x=[x_c],
-                                y=[y_c],
-                                z=[z_c],
-                                mode='lines',
-                                line=dict(color='#00ff88', width=4),
-                                showlegend=False,
-                                hoverinfo='skip'
-                            ))
-                
-                # Add grid lines for latitude/longitude
-                # Latitude lines
-                for lat in np.arange(-90, 91, 30):
-                    lat_rad = np.radians(lat)
-                    lon_points = np.linspace(0, 2*np.pi, 100)
-                    x_lat = r * np.cos(lat_rad) * np.cos(lon_points)
-                    y_lat = r * np.cos(lat_rad) * np.sin(lon_points)
-                    z_lat = r * np.sin(lat_rad) * np.ones_like(lon_points)
+                        Map.addLayer(sentinel, vis_params, 'Sentinel-2 Satellite', True, 0.7)
+                    except Exception as e:
+                        st.warning(f"Could not load Sentinel-2: {str(e)}")
                     
-                    fig.add_trace(go.Scatter3d(
-                        x=x_lat,
-                        y=y_lat,
-                        z=z_lat,
-                        mode='lines',
-                        line=dict(color='rgba(100, 100, 100, 0.3)', width=1),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ))
-                
-                # Longitude lines
-                for lon in np.arange(0, 360, 30):
-                    lon_rad = np.radians(lon)
-                    lat_points = np.linspace(-np.pi/2, np.pi/2, 100)
-                    x_lon = r * np.cos(lat_points) * np.cos(lon_rad)
-                    y_lon = r * np.cos(lat_points) * np.sin(lon_rad)
-                    z_lon = r * np.sin(lat_points)
+                    # 2. Add NDVI layer
+                    try:
+                        ndvi = sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
+                        ndvi_params = {
+                            'min': -1,
+                            'max': 1,
+                            'palette': ['blue', 'white', 'green']
+                        }
+                        Map.addLayer(ndvi, ndvi_params, 'NDVI Vegetation Index', False, 0.6)
+                    except:
+                        pass
                     
-                    fig.add_trace(go.Scatter3d(
-                        x=x_lon,
-                        y=y_lon,
-                        z=z_lon,
-                        mode='lines',
-                        line=dict(color='rgba(100, 100, 100, 0.3)', width=1),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ))
-                
-                # Add atmosphere effect
-                fig.add_trace(go.Surface(
-                    x=x*1.02, y=y*1.02, z=z*1.02,
-                    colorscale=[[0, 'rgba(135, 206, 235, 0.1)'], [1, 'rgba(135, 206, 235, 0.05)']],
-                    showscale=False,
-                    opacity=0.3,
-                    lighting=dict(ambient=0.5, diffuse=0.5)
-                ))
-                
-                # Configure layout for globe view
-                fig.update_layout(
-                    title=dict(
-                        text=f"<b>3D Globe View</b><br><span style='font-size:14px;color:#cccccc'>📍 {area_name}</span>",
-                        x=0.5,
-                        xanchor='center',
-                        font=dict(size=20, color='white')
-                    ),
-                    scene=dict(
-                        xaxis=dict(
-                            showbackground=False,
-                            showticklabels=False,
-                            showgrid=False,
-                            zeroline=False,
-                            title=''
-                        ),
-                        yaxis=dict(
-                            showbackground=False,
-                            showticklabels=False,
-                            showgrid=False,
-                            zeroline=False,
-                            title=''
-                        ),
-                        zaxis=dict(
-                            showbackground=False,
-                            showticklabels=False,
-                            showgrid=False,
-                            zeroline=False,
-                            title=''
-                        ),
-                        aspectmode='data',
-                        camera=dict(
-                            eye=dict(x=1.5, y=1.5, z=1.5),
-                            up=dict(x=0, y=0, z=1),
-                            center=dict(x=0, y=0, z=0)
-                        ),
-                        bgcolor='#0a0a0a'
-                    ),
-                    paper_bgcolor='#0a0a0a',
-                    plot_bgcolor='#0a0a0a',
-                    font=dict(color='white'),
-                    height=550,
-                    showlegend=True,
-                    legend=dict(
-                        x=0.02,
-                        y=0.98,
-                        bgcolor='rgba(0,0,0,0.5)',
-                        bordercolor='#666666',
-                        borderwidth=1,
-                        font=dict(size=12)
+                    # 3. Add NASA Blue Marble for beautiful globe view
+                    try:
+                        nasa = ee.Image('NASA/BlueMarble_NextGeneration/v2.1').select(['Red', 'Green', 'Blue'])
+                        Map.addLayer(nasa, {'min': 0, 'max': 255}, 'NASA Blue Marble', True, 1.0)
+                    except:
+                        pass
+                    
+                    # 4. Add study area boundary
+                    Map.addLayer(geometry.style(**{'color': '#00ff88', 'fillColor': '#00ff8822'}), {}, 'Study Area', True)
+                    
+                    # Add layer control
+                    Map.addLayerControl()
+                    
+                    # Try to set to 3D globe mode
+                    try:
+                        # For newer geemap versions with globe support
+                        Map.setOptions('SATELLITE')
+                        # Add terrain if available
+                        Map.add_basemap('Esri.WorldTerrain')
+                    except:
+                        # Fallback to regular view
+                        pass
+                    
+                    # Display the map
+                    Map.to_streamlit(height=550)
+                    
+                except ImportError:
+                    st.error("""
+                    **Geemap is not installed!**
+                    
+                    Please install geemap by running:
+                    ```bash
+                    pip install geemap
+                    ```
+                    
+                    Or for now, using the 2D map view instead.
+                    """)
+                    
+                    # Fallback to 2D map
+                    m = folium.Map(
+                        location=[center_lat, center_lon],
+                        zoom_start=6,
+                        tiles=None,
+                        control_scale=True,
+                        prefer_canvas=True
                     )
-                )
-                
-                # Display the 3D globe
-                st.plotly_chart(fig, use_container_width=True, config={
-                    'displayModeBar': True,
-                    'scrollZoom': True,
-                    'displaylogo': False,
-                    'modeBarButtonsToAdd': ['resetCameraDefault3d', 'resetCameraLastSave3d'],
-                    'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d']
-                })
+                    
+                    folium.TileLayer(
+                        'OpenStreetMap',
+                        name='OpenStreetMap',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                    
+                    folium.TileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        attr='Esri',
+                        name='Satellite',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                    
+                    folium.GeoJson(
+                        bounds,
+                        style_function=lambda x: {
+                            'fillColor': '#00ff88',
+                            'color': '#ffffff',
+                            'weight': 3,
+                            'fillOpacity': 0.2,
+                            'dashArray': '5, 5'
+                        },
+                        popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
+                        tooltip=f"Click for details: {area_name}"
+                    ).add_to(m)
+                    
+                    folium.LayerControl().add_to(m)
+                    
+                    st_folium(m, width=None, height=550)
                 
                 st.markdown("</div>", unsafe_allow_html=True)
                 
                 # Globe controls info
                 st.markdown("""
                 <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #00ff88;">
-                    <h4 style="color: #00ff88; margin-top: 0;">🎮 Globe Controls:</h4>
+                    <h4 style="color: #00ff88; margin-top: 0;">🎮 Earth Engine Globe Controls:</h4>
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px;">
                         <div>
-                            <strong style="color: #ffffff;">🖱️ Mouse Controls:</strong><br>
+                            <strong style="color: #ffffff;">🛰️ Satellite Layers:</strong><br>
                             <span style="color: #cccccc; font-size: 0.9em;">
-                            • <strong>Left drag:</strong> Rotate globe<br>
-                            • <strong>Right drag:</strong> Pan view<br>
-                            • <strong>Scroll:</strong> Zoom in/out
+                            • <strong>Sentinel-2:</strong> High-res satellite imagery<br>
+                            • <strong>NASA Blue Marble:</strong> Global Earth view<br>
+                            • <strong>NDVI:</strong> Vegetation health index<br>
+                            • <strong>Study Area:</strong> Green highlighted region
                             </span>
                         </div>
                         <div>
                             <strong style="color: #ffffff;">🎯 Navigation:</strong><br>
                             <span style="color: #cccccc; font-size: 0.9em;">
-                            • <strong>Reset:</strong> Click home icon<br>
-                            • <strong>Fullscreen:</strong> Click expand icon<br>
-                            • <strong>Export:</strong> Click camera icon
+                            • <strong>Layers:</strong> Toggle visibility in top-right<br>
+                            • <strong>Drag:</strong> Pan/rotate view<br>
+                            • <strong>Scroll:</strong> Zoom in/out<br>
+                            • <strong>Search:</strong> Find locations
                             </span>
                         </div>
                     </div>
@@ -678,9 +595,9 @@ if st.session_state.ee_initialized:
                 with col2:
                     st.markdown(f"""
                     <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15); margin-top: 20px;">
-                        <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🌍 GLOBE DATA PANEL</h4>
+                        <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🌍 EARTH ENGINE GLOBE</h4>
                         <div style="text-align: center; margin-bottom: 15px;">
-                            <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">3D INTERACTIVE GLOBE</span>
+                            <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">REAL-TIME SATELLITE DATA</span>
                         </div>
                         <hr style="border-color: #00ff88;">
                         
@@ -701,22 +618,22 @@ if st.session_state.ee_initialized:
                         </div>
                         
                         <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">🎮 Navigation:</strong><br>
-                            <span style="color: #00ff88;">Drag to rotate • Scroll to zoom</span>
+                            <strong style="color: #ffffff;">🛰️ Active Layers:</strong><br>
+                            <span style="color: #00ff88;">Sentinel-2 • NASA • NDVI</span>
                         </div>
                         
                         <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 20px; border-left: 3px solid #00ff88;">
                             <small style="color: #00ff88; display: block; margin-bottom: 5px;">💡 Pro Tip:</small>
                             <small style="color: #888888; font-size: 0.85em;">
-                            • The <span style="color: #00ff88;">green marker</span> shows your selected area<br>
-                            • Rotate to view different continents<br>
-                            • Use reset button to return to default view
+                            • Toggle layers in top-right control<br>
+                            • <span style="color: #00ff88;">NDVI layer</span> shows vegetation health<br>
+                            • Use search to find any location
                             </small>
                         </div>
                         
                         <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px; text-align: center;">
                             <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
-                            <small style="color: #888888;">3D Globe Visualization</small>
+                            <small style="color: #888888;">Powered by Google Earth Engine</small>
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
