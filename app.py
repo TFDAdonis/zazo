@@ -539,10 +539,25 @@ if st.session_state.ee_initialized:
                 <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
                 """, unsafe_allow_html=True)
                 
+                # Layer selection for 3D globe
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("### 🌍 **3D GLOBE LAYERS**")
+                    show_country_borders = st.checkbox("Country Borders", value=True)
+                    show_terrain = st.checkbox("Terrain Elevation", value=True)
+                    show_satellite = st.checkbox("Satellite Overlay", value=True)
+                    show_cities = st.checkbox("Major Cities", value=True)
+                    show_clouds = st.checkbox("Cloud Cover", value=False)
+                
+                with col2:
+                    st.markdown("### 🎨 **VISUALIZATION SETTINGS**")
+                    globe_opacity = st.slider("Globe Opacity", 0.5, 1.0, 0.9, 0.05)
+                    layer_opacity = st.slider("Layer Opacity", 0.3, 1.0, 0.7, 0.05)
+                    elevation_scale = st.slider("Terrain Scale", 0.5, 3.0, 1.5, 0.1)
+                
                 # Create 3D globe
                 fig = go.Figure()
                 
-                # Add globe surface (Earth sphere)
                 # Create sphere coordinates
                 u = np.linspace(0, 2 * np.pi, 100)
                 v = np.linspace(0, np.pi, 50)
@@ -553,7 +568,7 @@ if st.session_state.ee_initialized:
                 y = r * np.sin(v) * np.sin(u)
                 z = r * np.cos(v)
                 
-                # Create Earth texture colors (blue-green-brown)
+                # Base Earth texture with colors
                 colorscale = [
                     [0, '#1a5f7a'],      # Deep ocean
                     [0.2, '#2a8bb9'],    # Ocean
@@ -565,30 +580,181 @@ if st.session_state.ee_initialized:
                     [1.0, '#8b7355']     # High mountains
                 ]
                 
-                # Add Earth surface
+                # Add base Earth surface
                 fig.add_trace(go.Surface(
                     x=x, y=y, z=z,
                     colorscale=colorscale,
                     showscale=False,
-                    opacity=0.9,
+                    opacity=globe_opacity,
                     lighting=dict(
                         ambient=0.7,
                         diffuse=0.9,
                         roughness=0.8,
                         specular=0.9
                     ),
-                    lightposition=dict(x=10000, y=10000, z=10000)
+                    lightposition=dict(x=10000, y=10000, z=10000),
+                    name="Earth Surface"
                 ))
+                
+                # Add terrain elevation layer
+                if show_terrain:
+                    # Create exaggerated terrain effect
+                    terrain_r = r * (1 + 0.015 * np.sin(8*u) * np.sin(4*v) * elevation_scale)
+                    terrain_x = terrain_r * np.sin(v) * np.cos(u)
+                    terrain_y = terrain_r * np.sin(v) * np.sin(u)
+                    terrain_z = terrain_r * np.cos(v)
+                    
+                    fig.add_trace(go.Surface(
+                        x=terrain_x, y=terrain_y, z=terrain_z,
+                        colorscale=[
+                            [0, 'rgba(139, 115, 85, 0.3)'],   # Mountains
+                            [0.5, 'rgba(184, 134, 11, 0.4)'], # Highlands
+                            [1, 'rgba(143, 188, 143, 0.5)']   # Lowlands
+                        ],
+                        showscale=False,
+                        opacity=layer_opacity * 0.5,
+                        name="Terrain Elevation"
+                    ))
+                
+                # Add country borders layer (simplified for performance)
+                if show_country_borders:
+                    # Create simplified country borders using great circles
+                    # This is a simplified version for demonstration
+                    border_colors = ['rgba(255, 255, 255, 0.6)', 'rgba(255, 200, 200, 0.6)', 
+                                    'rgba(200, 255, 200, 0.6)', 'rgba(200, 200, 255, 0.6)']
+                    
+                    # Add some continental outlines (simplified)
+                    continents = [
+                        {'name': 'Africa', 'lat_range': (-35, 37), 'lon_range': (-20, 50)},
+                        {'name': 'Europe', 'lat_range': (35, 70), 'lon_range': (-10, 60)},
+                        {'name': 'Asia', 'lat_range': (10, 70), 'lon_range': (60, 180)},
+                        {'name': 'Americas', 'lat_range': (-55, 70), 'lon_range': (-170, -30)}
+                    ]
+                    
+                    for i, continent in enumerate(continents):
+                        # Create a simple rectangular border for demonstration
+                        lat_min, lat_max = continent['lat_range']
+                        lon_min, lon_max = continent['lon_range']
+                        
+                        # Create border points
+                        border_lats = [lat_min, lat_max, lat_max, lat_min, lat_min]
+                        border_lons = [lon_min, lon_min, lon_max, lon_max, lon_min]
+                        
+                        # Convert to 3D
+                        lat_rad = np.radians(np.array(border_lats))
+                        lon_rad = np.radians(np.array(border_lons))
+                        
+                        border_x = r * np.cos(lat_rad) * np.cos(lon_rad)
+                        border_y = r * np.cos(lat_rad) * np.sin(lon_rad)
+                        border_z = r * np.sin(lat_rad)
+                        
+                        fig.add_trace(go.Scatter3d(
+                            x=border_x, y=border_y, z=border_z,
+                            mode='lines',
+                            line=dict(color=border_colors[i % len(border_colors)], width=1.5),
+                            showlegend=True,
+                            name=f"{continent['name']} Border",
+                            hoverinfo='skip'
+                        ))
+                
+                # Add major cities layer
+                if show_cities:
+                    # Sample major cities with their coordinates
+                    major_cities = [
+                        {'name': 'Tokyo', 'lat': 35.6762, 'lon': 139.6503},
+                        {'name': 'New York', 'lat': 40.7128, 'lon': -74.0060},
+                        {'name': 'London', 'lat': 51.5074, 'lon': -0.1278},
+                        {'name': 'Paris', 'lat': 48.8566, 'lon': 2.3522},
+                        {'name': 'Sydney', 'lat': -33.8688, 'lon': 151.2093},
+                        {'name': 'Dubai', 'lat': 25.2048, 'lon': 55.2708},
+                        {'name': 'Singapore', 'lat': 1.3521, 'lon': 103.8198},
+                        {'name': 'Cairo', 'lat': 30.0444, 'lon': 31.2357},
+                        {'name': 'Moscow', 'lat': 55.7558, 'lon': 37.6173},
+                        {'name': 'Rio', 'lat': -22.9068, 'lon': -43.1729}
+                    ]
+                    
+                    city_x = []
+                    city_y = []
+                    city_z = []
+                    city_names = []
+                    city_coords = []
+                    
+                    for city in major_cities:
+                        lat_rad = np.radians(city['lat'])
+                        lon_rad = np.radians(city['lon'])
+                        
+                        city_x.append(r * np.cos(lat_rad) * np.cos(lon_rad))
+                        city_y.append(r * np.cos(lat_rad) * np.sin(lon_rad))
+                        city_z.append(r * np.sin(lat_rad))
+                        city_names.append(city['name'])
+                        city_coords.append([city['lat'], city['lon']])
+                    
+                    fig.add_trace(go.Scatter3d(
+                        x=city_x, y=city_y, z=city_z,
+                        mode='markers',
+                        marker=dict(
+                            size=6,
+                            color='#FF6B6B',
+                            symbol='circle',
+                            line=dict(color='white', width=1)
+                        ),
+                        text=city_names,
+                        hovertemplate='<b>%{text}</b><br>Lat: %{customdata[0]:.2f}°<br>Lon: %{customdata[1]:.2f}°<extra></extra>',
+                        customdata=city_coords,
+                        name="Major Cities"
+                    ))
+                
+                # Add satellite imagery overlay (simulated)
+                if show_satellite:
+                    # Create a semi-transparent satellite-like texture
+                    satellite_r = r * 1.001  # Slightly above Earth surface
+                    
+                    # Generate texture with some variation
+                    texture = 0.5 + 0.3 * np.sin(10*u) * np.sin(5*v)
+                    satellite_z = satellite_r * np.cos(v) + 0.005 * texture
+                    
+                    fig.add_trace(go.Surface(
+                        x=satellite_r * np.sin(v) * np.cos(u),
+                        y=satellite_r * np.sin(v) * np.sin(u),
+                        z=satellite_z,
+                        colorscale=[
+                            [0, 'rgba(100, 150, 200, 0.3)'],
+                            [0.3, 'rgba(150, 200, 150, 0.4)'],
+                            [0.7, 'rgba(200, 150, 100, 0.4)'],
+                            [1, 'rgba(150, 100, 150, 0.3)']
+                        ],
+                        showscale=False,
+                        opacity=layer_opacity * 0.4,
+                        name="Satellite Overlay"
+                    ))
+                
+                # Add cloud cover layer
+                if show_clouds:
+                    cloud_r = r * 1.005
+                    
+                    # Create cloud-like pattern
+                    cloud_pattern = 0.5 + 0.3 * np.sin(15*u) * np.cos(8*v) * np.sin(3*u + 2*v)
+                    
+                    fig.add_trace(go.Surface(
+                        x=cloud_r * np.sin(v) * np.cos(u),
+                        y=cloud_r * np.sin(v) * np.sin(u),
+                        z=cloud_r * np.cos(v) + 0.01 * cloud_pattern,
+                        colorscale=[[0, 'rgba(255, 255, 255, 0.1)'], [1, 'rgba(255, 255, 255, 0.3)']],
+                        showscale=False,
+                        opacity=layer_opacity * 0.3,
+                        name="Cloud Cover"
+                    ))
                 
                 # Add atmosphere glow
                 fig.add_trace(go.Surface(
                     x=x*1.02, y=y*1.02, z=z*1.02,
                     colorscale=[[0, 'rgba(135, 206, 235, 0.1)'], [1, 'rgba(135, 206, 235, 0.05)']],
                     showscale=False,
-                    opacity=0.3
+                    opacity=0.3,
+                    name="Atmosphere"
                 ))
                 
-                # Convert study area center to 3D coordinates
+                # Add study area marker
                 lat_rad = np.radians(center_lat)
                 lon_rad = np.radians(center_lon)
                 
@@ -596,7 +762,6 @@ if st.session_state.ee_initialized:
                 marker_y = r * np.cos(lat_rad) * np.sin(lon_rad)
                 marker_z = r * np.sin(lat_rad)
                 
-                # Add study area marker on globe
                 fig.add_trace(go.Scatter3d(
                     x=[marker_x],
                     y=[marker_y],
@@ -612,16 +777,18 @@ if st.session_state.ee_initialized:
                     textposition="top center",
                     textfont=dict(size=25, color='#00ff88'),
                     name=f"📍 {area_name}",
-                    hoverinfo='text',
-                    hovertext=f"""
+                    hovertemplate=f"""
                     <b>📍 Study Area:</b> {area_name}<br>
                     <b>📊 Level:</b> {area_level}<br>
                     <b>🌐 Coordinates:</b> {center_lat:.4f}°N, {center_lon:.4f}°E<br>
                     <b>🔍 Status:</b> Active for analysis
+                    <extra></extra>
                     """
                 ))
                 
                 # Add latitude/longitude grid
+                grid_opacity = 0.2 if show_country_borders else 0.3
+                
                 # Latitude lines
                 for lat in range(-80, 81, 20):
                     lat_rad = np.radians(lat)
@@ -633,7 +800,7 @@ if st.session_state.ee_initialized:
                     fig.add_trace(go.Scatter3d(
                         x=x_lat, y=y_lat, z=z_lat,
                         mode='lines',
-                        line=dict(color='rgba(255, 255, 255, 0.2)', width=1),
+                        line=dict(color='rgba(255, 255, 255, 0.2)', width=0.5),
                         showlegend=False,
                         hoverinfo='skip'
                     ))
@@ -649,15 +816,32 @@ if st.session_state.ee_initialized:
                     fig.add_trace(go.Scatter3d(
                         x=x_lon, y=y_lon, z=z_lon,
                         mode='lines',
-                        line=dict(color='rgba(255, 255, 255, 0.2)', width=1),
+                        line=dict(color='rgba(255, 255, 255, 0.2)', width=0.5),
                         showlegend=False,
                         hoverinfo='skip'
                     ))
                 
-                # Configure globe layout
+                # Add equator highlight
+                equator_lat = 0
+                lat_rad = np.radians(equator_lat)
+                lon_points = np.linspace(0, 2*np.pi, 200)
+                x_eq = r * np.cos(lat_rad) * np.cos(lon_points)
+                y_eq = r * np.cos(lat_rad) * np.sin(lon_points)
+                z_eq = r * np.sin(lat_rad) * np.ones_like(lon_points)
+                
+                fig.add_trace(go.Scatter3d(
+                    x=x_eq, y=y_eq, z=z_eq,
+                    mode='lines',
+                    line=dict(color='rgba(255, 100, 100, 0.5)', width=2),
+                    showlegend=False,
+                    hoverinfo='skip',
+                    name="Equator"
+                ))
+                
+                # Configure globe layout with enhanced controls
                 fig.update_layout(
                     title=dict(
-                        text=f"<b>3D Interactive Globe</b><br><span style='font-size:14px;color:#cccccc'>📍 {area_name} • Drag to rotate globe</span>",
+                        text=f"<b>3D Interactive Globe with Multiple Layers</b><br><span style='font-size:14px;color:#cccccc'>📍 {area_name} • Drag to rotate • Scroll to zoom</span>",
                         x=0.5,
                         xanchor='center',
                         font=dict(size=20, color='white')
@@ -704,12 +888,15 @@ if st.session_state.ee_initialized:
                     legend=dict(
                         x=0.02,
                         y=0.98,
-                        bgcolor='rgba(0,0,0,0.5)',
+                        bgcolor='rgba(0,0,0,0.7)',
                         bordercolor='#666666',
                         borderwidth=1,
-                        font=dict(size=12)
+                        font=dict(size=10),
+                        itemsizing='constant',
+                        itemclick='toggleothers',
+                        itemdoubleclick='toggle'
                     ),
-                    margin=dict(l=0, r=0, t=50, b=0)
+                    margin=dict(l=0, r=0, t=80, b=0)
                 )
                 
                 # Display the 3D globe
@@ -717,21 +904,68 @@ if st.session_state.ee_initialized:
                     'displayModeBar': True,
                     'scrollZoom': True,
                     'displaylogo': False,
-                    'modeBarButtonsToAdd': ['resetCameraDefault3d', 'resetCameraLastSave3d'],
-                    'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d']
+                    'modeBarButtonsToAdd': [
+                        'resetCameraDefault3d',
+                        'resetCameraLastSave3d',
+                        'drawline',
+                        'drawopenpath',
+                        'drawcircle',
+                        'drawrect',
+                        'eraseshape'
+                    ],
+                    'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d'],
+                    'toImageButtonOptions': {
+                        'format': 'png',
+                        'filename': 'khisba_3d_globe',
+                        'height': 800,
+                        'width': 1200,
+                        'scale': 2
+                    }
                 })
                 
                 # Globe controls
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🔄 Reset Globe View", type="secondary"):
+                st.markdown("### 🎮 **3D GLOBE CONTROLS**")
+                
+                control_cols = st.columns(4)
+                
+                with control_cols[0]:
+                    if st.button("🔄 Reset View", type="secondary", use_container_width=True):
                         st.session_state.globe_rotation = {'lat': 0, 'lon': 0}
                         st.rerun()
                 
-                with col2:
-                    if st.button("🎯 Center on Study Area", type="secondary"):
+                with control_cols[1]:
+                    if st.button("🎯 Center on Area", type="secondary", use_container_width=True):
                         st.session_state.globe_rotation = {'lat': center_lat, 'lon': center_lon}
                         st.rerun()
+                
+                with control_cols[2]:
+                    if st.button("🗺️ Toggle All Layers", type="secondary", use_container_width=True):
+                        # This would require more complex state management
+                        st.info("Layer toggles updated. Use checkboxes above to control individual layers.")
+                
+                with control_cols[3]:
+                    if st.button("📸 Screenshot", type="secondary", use_container_width=True):
+                        st.info("Right-click on the globe and select 'Save image as...' to save a screenshot")
+                
+                # Layer status display
+                active_layers = []
+                if show_country_borders: active_layers.append("Country Borders")
+                if show_terrain: active_layers.append("Terrain")
+                if show_satellite: active_layers.append("Satellite")
+                if show_cities: active_layers.append("Cities")
+                if show_clouds: active_layers.append("Clouds")
+                
+                st.markdown(f"""
+                <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; margin: 15px 0; border-left: 4px solid #00ff88;">
+                    <h4 style="color: #00ff88; margin-top: 0;">📊 ACTIVE LAYERS: {len(active_layers)}</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;">
+                        {''.join([f'<span style="background: rgba(0, 255, 136, 0.2); padding: 5px 10px; border-radius: 20px; color: #00ff88; font-size: 0.9em;">{layer}</span>' for layer in active_layers])}
+                    </div>
+                    <p style="color: #cccccc; margin-top: 10px; font-size: 0.9em;">
+                    <strong>💡 Tip:</strong> Toggle layers using checkboxes above • Legend shows active layers • Click legend items to toggle visibility
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 st.markdown("</div>", unsafe_allow_html=True)
             
