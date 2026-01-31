@@ -102,8 +102,6 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-if 'map_mode' not in st.session_state:
-    st.session_state.map_mode = "globe"  # Default to globe view
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -217,18 +215,6 @@ else:
         except Exception as e:
             st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
 
-# Map Mode Selection
-st.sidebar.markdown("### 🌍 **MAP VIEW MODE**")
-map_mode = st.sidebar.radio(
-    "Choose map display:",
-    ["🌐 3D Globe View", "🗺️ 2D Map View"],
-    index=0 if st.session_state.map_mode == "globe" else 1,
-    help="Switch between 3D globe and 2D map views"
-)
-
-# Update session state
-st.session_state.map_mode = "globe" if map_mode.startswith("🌐") else "2d"
-
 # Import the helper functions
 try:
     from earth_engine_utils import get_admin_boundaries, get_boundary_names
@@ -317,14 +303,6 @@ if st.session_state.ee_initialized:
     if selected_country:
         st.markdown("### 🌍 **KHISBA GIS ANALYTICS WORKSPACE**")
         
-        # Map mode indicator
-        map_mode_display = "🌐 3D GLOBE VIEW" if st.session_state.map_mode == "globe" else "🗺️ 2D MAP VIEW"
-        st.markdown(f"""
-        <div style="text-align: center; background: linear-gradient(90deg, #1a1a2a, #2a1a3a); padding: 10px; border-radius: 5px; margin: 10px 0; border: 2px solid #00ff88;">
-            <strong style="color: #00ff88;">{map_mode_display}</strong> • <span style="color: #cccccc;">Drag to rotate globe | Scroll to zoom</span>
-        </div>
-        """, unsafe_allow_html=True)
-        
         try:
             # Determine which geometry to use
             if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
@@ -350,331 +328,120 @@ if st.session_state.ee_initialized:
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            if st.session_state.map_mode == "globe":
-                # Create 3D GLOBE view with enhanced styling
-                m = folium.Map(
-                    location=[center_lat, center_lon],
-                    zoom_start=4,
-                    tiles=None,
-                    control_scale=True,
-                    prefer_canvas=True,
-                    max_bounds=True,
-                    max_lat=85,
-                    min_lat=-85
-                )
-                
-                # Add Globe projection explicitly
-                m.options['crs'] = 'EPSG3857'  # Keep this for base
-                
-                # Add stunning 3D globe layers
-                # Dark Matter Globe with better visibility
-                folium.TileLayer(
-                    'CartoDB dark_matter',
-                    name='🌐 Dark Globe',
-                    attr='CartoDB',
-                    overlay=False,
-                    control=True,
-                    max_native_zoom=18,
-                    max_zoom=30
-                ).add_to(m)
-                
-                # Satellite imagery on globe
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='🛰️ Satellite Globe',
-                    overlay=False,
-                    control=True,
-                    max_native_zoom=19
-                ).add_to(m)
-                
-                # Add NASA's Blue Marble for beautiful globe view
-                folium.TileLayer(
-                    'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default//EPSG3857_500m/{z}/{y}/{x}.jpeg',
-                    attr='NASA',
-                    name='🌍 NASA Blue Marble',
-                    overlay=False,
-                    control=True,
-                    max_native_zoom=8
-                ).add_to(m)
-                
-                # Add terrain/relief layer
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='🏔️ Terrain Globe',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                # Add study area with glowing effect
-                study_area_style = {
+            # Create professional GIS map with multiple base layers
+            m = folium.Map(
+                location=[center_lat, center_lon],
+                zoom_start=6,
+                tiles=None,  # We'll add custom tiles
+                control_scale=True,
+                prefer_canvas=True
+            )
+            
+            # Add multiple professional base layers
+            folium.TileLayer(
+                'OpenStreetMap',
+                name='OpenStreetMap',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            folium.TileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                name='Satellite',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            folium.TileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                name='Terrain',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            folium.TileLayer(
+                'CartoDB dark_matter',
+                name='Dark Theme',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # Add professional study area styling
+            folium.GeoJson(
+                bounds,
+                style_function=lambda x: {
                     'fillColor': '#00ff88',
                     'color': '#ffffff',
-                    'weight': 4,
-                    'fillOpacity': 0.3,
-                    'dashArray': '5, 5',
-                    'opacity': 0.8
-                }
-                
-                # Create a feature group for the study area
-                study_area_fg = folium.FeatureGroup(name="📌 Study Area", overlay=True)
-                
-                # Add GeoJson with popup
-                folium.GeoJson(
-                    bounds,
-                    style_function=lambda x: study_area_style,
-                    popup=folium.Popup(
-                        f"""
-                        <div style="font-family: Arial, sans-serif; padding: 10px;">
-                            <h3 style="color: #00ff88; margin-top: 0;">📌 STUDY AREA</h3>
-                            <hr style="border-color: #00ff88;">
-                            <p><strong>📍 Location:</strong> {area_name}</p>
-                            <p><strong>📊 Level:</strong> {area_level}</p>
-                            <p><strong>🌐 Coordinates:</strong><br>
-                            Lat: {center_lat:.4f}°<br>
-                            Lon: {center_lon:.4f}°</p>
-                            <p><strong>🔍 Status:</strong> Active for analysis</p>
-                            <div style="background: #1a1a1a; padding: 8px; border-radius: 5px; margin-top: 10px;">
-                                <small style="color: #00ff88;">KHISBA GIS Professional</small>
-                            </div>
-                        </div>
-                        """, 
-                        max_width=350
-                    ),
-                    tooltip=f"📍 {area_name} | Click for details"
-                ).add_to(study_area_fg)
-                
-                # Add a marker at the center
-                folium.CircleMarker(
-                    location=[center_lat, center_lon],
-                    radius=8,
-                    popup=f"Center: {center_lat:.4f}, {center_lon:.4f}",
-                    color='#00ff88',
-                    fill=True,
-                    fillColor='#00ff88',
-                    fillOpacity=0.7,
-                    weight=3
-                ).add_to(study_area_fg)
-                
-                study_area_fg.add_to(m)
-                
-                # Add professional plugins for globe
-                from folium.plugins import MousePosition, MeasureControl, Fullscreen, Draw, MiniMap
-                
-                # Mouse position with coordinates
-                MousePosition(
-                    position='bottomleft',
-                    separator=' | ',
-                    empty_string='Drag globe to explore',
-                    lng_first=True,
-                    num_digits=4,
-                    prefix='Coordinates:',
-                    lat_formatter=lambda x: f'Lat: {x:.4f}°',
-                    lng_formatter=lambda x: f'Lon: {x:.4f}°'
-                ).add_to(m)
-                
-                # Measurement tool
-                MeasureControl(
-                    position='bottomleft',
-                    primary_length_unit='kilometers',
-                    secondary_length_unit='miles',
-                    primary_area_unit='sqkilometers',
-                    secondary_area_unit='acres'
-                ).add_to(m)
-                
-                # Fullscreen mode
-                Fullscreen(
-                    position='topright',
-                    title='Expand me',
-                    title_cancel='Exit fullscreen',
-                    force_separate_button=True
-                ).add_to(m)
-                
-                # Mini map for reference
-                minimap = MiniMap(
-                    tile_layer='CartoDB dark_matter',
-                    position='bottomright',
-                    width=150,
-                    height=150,
-                    zoom_level_offset=-5,
-                    zoom_level_fixed=None,
-                    center_fixed=False,
-                    toggle_display=True
-                )
-                m.add_child(minimap)
-                
-                # Add layer control
-                folium.LayerControl(
-                    position='topright',
-                    collapsed=True,
-                    autoZIndex=True
-                ).add_to(m)
-                
-                # Add custom CSS for better globe appearance
-                globe_css = """
-                <style>
-                    .folium-map {
-                        border: 3px solid #00ff88 !important;
-                        border-radius: 15px !important;
-                        box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3) !important;
-                    }
-                    .leaflet-control-attribution {
-                        background: rgba(0, 0, 0, 0.7) !important;
-                        color: #cccccc !important;
-                        font-size: 11px !important;
-                    }
-                    .leaflet-popup-content {
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
-                    }
-                </style>
-                """
-                st.markdown(globe_css, unsafe_allow_html=True)
-                
-            else:
-                # Create 2D professional GIS map (original code)
-                m = folium.Map(
-                    location=[center_lat, center_lon],
-                    zoom_start=6,
-                    tiles=None,
-                    control_scale=True,
-                    prefer_canvas=True
-                )
-                
-                # Add multiple professional base layers
-                folium.TileLayer(
-                    'OpenStreetMap',
-                    name='OpenStreetMap',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Satellite',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Terrain',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'CartoDB dark_matter',
-                    name='Dark Theme',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                # Add professional study area styling
-                folium.GeoJson(
-                    bounds,
-                    style_function=lambda x: {
-                        'fillColor': '#00ff88',
-                        'color': '#ffffff',
-                        'weight': 3,
-                        'fillOpacity': 0.2,
-                        'dashArray': '5, 5'
-                    },
-                    popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
-                    tooltip=f"Click for details: {area_name}"
-                ).add_to(m)
-                
-                # Add coordinate display and measurement tools
-                from folium.plugins import MousePosition, MeasureControl
-                
-                MousePosition().add_to(m)
-                MeasureControl(primary_length_unit='kilometers').add_to(m)
-                
-                # Add layer control
-                folium.LayerControl().add_to(m)
+                    'weight': 3,
+                    'fillOpacity': 0.2,
+                    'dashArray': '5, 5'
+                },
+                popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
+                tooltip=f"Click for details: {area_name}"
+            ).add_to(m)
+            
+            # Add coordinate display and measurement tools
+            from folium.plugins import MousePosition, MeasureControl
+            
+            MousePosition().add_to(m)
+            MeasureControl(primary_length_unit='kilometers').add_to(m)
+            
+            # Add layer control
+            folium.LayerControl().add_to(m)
             
             # Professional GIS info panel
             col1, col2 = st.columns([2, 1])
             
             with col1:
                 # Display professional map with enhanced styling
-                if st.session_state.map_mode == "globe":
-                    st.markdown("""
-                    <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2);">
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-                    <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
-                    """, unsafe_allow_html=True)
+                st.markdown("""
+                <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
+                """, unsafe_allow_html=True)
                 
                 map_data = st_folium(
                     m, 
                     width=None, 
-                    height=550 if st.session_state.map_mode == "globe" else 500,
-                    returned_objects=["last_clicked", "bounds", "zoom"],
-                    key="gis_map_" + st.session_state.map_mode
+                    height=500,
+                    returned_objects=["last_clicked", "bounds"],
+                    key="gis_map"
                 )
                 
                 st.markdown("</div>", unsafe_allow_html=True)
             
             with col2:
                 # Professional GIS information panel
-                if st.session_state.map_mode == "globe":
-                    panel_style = """
-                    <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15);">
-                        <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🌍 GLOBE DATA PANEL</h4>
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">3D GLOBE VIEW</span>
-                        </div>
-                    """
-                else:
-                    panel_style = """
-                    <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
-                        <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
-                    """
-                
                 st.markdown(f"""
-                {panel_style}
+                <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
+                    <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
                     <hr style="border-color: #00ff88;">
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">📌 Study Area:</strong><br>
+                        <strong style="color: #ffffff;">Study Area:</strong><br>
                         <span style="color: #cccccc;">{area_name}</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">📊 Administrative Level:</strong><br>
+                        <strong style="color: #ffffff;">Administrative Level:</strong><br>
                         <span style="color: #00ff88;">{area_level}</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">📍 Coordinates:</strong><br>
-                        <span style="color: #cccccc; font-family: monospace;">Lat: {center_lat:.4f}°<br>
+                        <strong style="color: #ffffff;">Coordinates:</strong><br>
+                        <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
                         Lon: {center_lon:.4f}°</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">🌐 View Mode:</strong><br>
-                        <span style="color: #00ff88;">{"3D Globe • Rotate & Zoom" if st.session_state.map_mode == "globe" else "2D Map • Pan & Zoom"}</span>
+                        <strong style="color: #ffffff;">Map Layers:</strong><br>
+                        <span style="color: #cccccc;">• Satellite Imagery<br>
+                        • Terrain Data<br>
+                        • Administrative Boundaries<br>
+                        • Dark/Light Themes</span>
                     </div>
                     
-                    <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">🗺️ Map Layers:</strong><br>
-                        <span style="color: #cccccc; font-size: 0.9em;">
-                        {"• NASA Blue Marble<br>• Satellite Imagery<br>• Terrain Data<br>• Study Area Highlight" if st.session_state.map_mode == "globe" else "• Satellite Imagery<br>• Terrain Data<br>• Administrative Boundaries<br>• Dark/Light Themes"}
-                        </span>
-                    </div>
-                    
-                    <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 20px; border-left: 3px solid #00ff88;">
-                        <small style="color: #00ff88; display: block; margin-bottom: 5px;">💡 Navigation Tips:</small>
-                        <small style="color: #888888; font-size: 0.85em;">
-                        {"• Drag to rotate globe<br>• Scroll to zoom in/out<br>• Click layers icon for options" if st.session_state.map_mode == "globe" else "• Drag to pan map<br>• Scroll to zoom<br>• Click for coordinates"}
-                        </small>
-                    </div>
-                    
-                    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px; text-align: center;">
+                    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px;">
                         <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
                         <small style="color: #888888;">Powered by Earth Engine</small>
                     </div>
@@ -684,11 +451,9 @@ if st.session_state.ee_initialized:
             st.session_state.selected_geometry = geometry
             
             # Professional status indicator
-            status_icon = "🌐" if st.session_state.map_mode == "globe" else "🗺️"
             st.markdown(f"""
-            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 12px; border-radius: 8px; margin: 15px 0; border: 1px solid #ffffff;">
-                <strong style="color: white; font-size: 1.1em;">✅ GIS WORKSPACE ACTIVE</strong><br>
-                <span style="color: #e8f5e8; font-size: 0.9em;">{status_icon} {area_name} • {area_level} • {map_mode_display}</span>
+            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <strong style="color: white;">✅ GIS WORKSPACE ACTIVE</strong> • Study Area: {area_name}
             </div>
             """, unsafe_allow_html=True)
             
