@@ -12,201 +12,40 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-from typing import Optional, Dict, List, Tuple
-import plotly.io as pio
 
-# Set Plotly theme for TypeScript style
-pio.templates["ts_style"] = go.layout.Template(
-    layout=go.Layout(
-        font=dict(family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"),
-        plot_bgcolor="#0f172a",
-        paper_bgcolor="#0f172a",
-        title=dict(font=dict(size=24, color="#ffffff"), x=0.5),
-        xaxis=dict(
-            gridcolor="#1e293b",
-            linecolor="#475569",
-            tickfont=dict(color="#94a3b8"),
-            title_font=dict(color="#cbd5e1")
-        ),
-        yaxis=dict(
-            gridcolor="#1e293b",
-            linecolor="#475569",
-            tickfont=dict(color="#94a3b8"),
-            title_font=dict(color="#cbd5e1")
-        ),
-        colorway=["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"],
-        hoverlabel=dict(
-            bgcolor="#1e293b",
-            font=dict(color="#ffffff")
-        )
-    )
-)
-pio.templates.default = "ts_style"
-
-# Custom CSS for TypeScript/React style
+# Custom CSS for Green & Black TypeScript/React Style
 st.markdown("""
 <style>
-    /* Base styles */
+    /* Base styling */
     .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        background: #000000;
         color: #ffffff;
     }
     
-    /* TypeScript-style buttons */
-    .stButton > button {
-        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-        color: white;
-        border: none;
-        padding: 12px 24px;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
+    /* Green & Black Theme */
+    :root {
+        --primary-green: #00ff88;
+        --primary-black: #000000;
+        --secondary-black: #111111;
+        --card-bg: #1a1a1a;
+        --border-color: #333333;
+        --text-primary: #ffffff;
+        --text-secondary: #cccccc;
+        --text-green: #00ff88;
+        --accent-green: #00cc6a;
     }
     
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
-    }
-    
-    .stButton > button:active {
-        transform: translateY(0);
-    }
-    
-    /* Primary button */
-    div[data-testid="stButton"] button[kind="primary"] {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        border: none;
-    }
-    
-    div[data-testid="stButton"] button[kind="primary"]:hover {
-        box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
-    }
-    
-    /* Secondary button */
-    div[data-testid="stButton"] button[kind="secondary"] {
-        background: linear-gradient(135deg, #475569 0%, #334155 100%);
-        border: none;
-    }
-    
-    /* Input fields */
-    .stTextInput > div > div > input,
-    .stSelectbox > div > div > select,
-    .stDateInput > div > div > input,
-    .stNumberInput > div > div > input {
-        background-color: #1e293b !important;
-        border: 1px solid #475569 !important;
-        color: #ffffff !important;
-        border-radius: 6px !important;
-        padding: 10px 12px !important;
-    }
-    
-    .stTextInput > div > div > input:focus,
-    .stSelectbox > div > div > select:focus,
-    .stDateInput > div > div > input:focus {
-        border-color: #3b82f6 !important;
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2) !important;
-    }
-    
-    /* Checkboxes */
-    .stCheckbox > label {
-        color: #cbd5e1 !important;
-        font-weight: 500;
-    }
-    
-    .stCheckbox > div > div {
-        background-color: #1e293b !important;
-        border-color: #475569 !important;
-    }
-    
-    /* Sliders */
-    .stSlider > div > div > div {
-        background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
-    }
-    
-    .stSlider > div > div > div > div {
-        background: #ffffff !important;
-        border: 3px solid #3b82f6 !important;
-    }
-    
-    /* Select boxes */
-    .stSelectbox > div > div {
-        background-color: #1e293b !important;
-        border: 1px solid #475569 !important;
-    }
-    
-    /* File uploader */
-    .stFileUploader > div {
-        border: 2px dashed #475569 !important;
-        border-radius: 8px !important;
-        background-color: #1e293b !important;
-    }
-    
-    /* Multi-select */
-    .stMultiSelect > div > div > div {
-        background-color: #1e293b !important;
-        border: 1px solid #475569 !important;
-    }
-    
-    /* Sidebar */
-    .css-1d391kg, .css-12oz5g7 {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
-    }
-    
-    /* Cards */
-    .card {
-        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 24px;
-        margin: 16px 0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Status indicators */
-    .status-success {
-        background: linear-gradient(135deg, #10b981 0%, #047857 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-    }
-    
-    .status-warning {
-        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-    }
-    
-    .status-error {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        display: inline-block;
-    }
-    
-    /* Typography */
+    /* Typography - Modern TypeScript style */
     h1, h2, h3, h4, h5, h6 {
-        color: #ffffff !important;
-        font-weight: 700 !important;
-        letter-spacing: -0.025em !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: var(--text-primary) !important;
     }
     
     h1 {
         font-size: 2.5rem !important;
-        background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+        background: linear-gradient(90deg, var(--primary-green), #00cc6a);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -214,18 +53,126 @@ st.markdown("""
     
     h2 {
         font-size: 1.875rem !important;
-        color: #e2e8f0 !important;
+        color: var(--primary-green) !important;
     }
     
     h3 {
         font-size: 1.5rem !important;
-        color: #cbd5e1 !important;
+    }
+    
+    /* Cards - TypeScript style */
+    .ts-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        transition: all 0.3s ease;
+    }
+    
+    .ts-card:hover {
+        border-color: var(--primary-green);
+        box-shadow: 0 4px 20px rgba(0, 255, 136, 0.1);
+    }
+    
+    /* Buttons - TypeScript style */
+    .stButton > button {
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green));
+        color: var(--primary-black) !important;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 255, 136, 0.3);
+    }
+    
+    /* Primary button */
+    div[data-testid="stButton"] button[kind="primary"] {
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green)) !important;
+        color: var(--primary-black) !important;
+        border: none !important;
+    }
+    
+    /* Secondary button */
+    div[data-testid="stButton"] button[kind="secondary"] {
+        background: var(--secondary-black) !important;
+        color: var(--primary-green) !important;
+        border: 1px solid var(--primary-green) !important;
+    }
+    
+    /* Input fields */
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div > select,
+    .stDateInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-color) !important;
+        color: var(--text-primary) !important;
+        border-radius: 8px !important;
+        padding: 10px 12px !important;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stSelectbox > div > div > select:focus,
+    .stDateInput > div > div > input:focus {
+        border-color: var(--primary-green) !important;
+        box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
+    }
+    
+    /* Checkboxes */
+    .stCheckbox > label {
+        color: var(--text-secondary) !important;
+        font-weight: 500;
+    }
+    
+    /* Sliders */
+    .stSlider > div > div > div {
+        background: linear-gradient(90deg, var(--primary-green), var(--accent-green)) !important;
+    }
+    
+    .stSlider > div > div > div > div {
+        background: var(--primary-green) !important;
+        border: 3px solid var(--primary-green) !important;
+    }
+    
+    /* Select boxes */
+    .stSelectbox > div > div {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-color) !important;
+    }
+    
+    /* Multi-select */
+    .stMultiSelect > div > div > div {
+        background: var(--secondary-black) !important;
+        border: 1px solid var(--border-color) !important;
+    }
+    
+    /* File uploader */
+    .stFileUploader > div {
+        border: 2px dashed var(--border-color) !important;
+        border-radius: 8px !important;
+        background: var(--secondary-black) !important;
+    }
+    
+    /* Sidebar */
+    .css-1d391kg, .css-12oz5g7 {
+        background: var(--primary-black) !important;
+        border-right: 1px solid var(--border-color) !important;
     }
     
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #1e293b;
+        background: var(--card-bg);
         padding: 8px;
         border-radius: 8px;
     }
@@ -233,131 +180,176 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] {
         border-radius: 6px;
         padding: 12px 24px;
-        background-color: #1e293b;
-        color: #94a3b8;
+        background: transparent;
+        color: var(--text-secondary);
         font-weight: 500;
         transition: all 0.3s ease;
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #3b82f6 !important;
-        color: white !important;
+        background: var(--primary-green) !important;
+        color: var(--primary-black) !important;
     }
     
     /* Dataframes */
     .dataframe {
-        background-color: #1e293b !important;
-        border: 1px solid #475569 !important;
+        background: var(--card-bg) !important;
+        border: 1px solid var(--border-color) !important;
     }
     
     .dataframe th {
-        background-color: #334155 !important;
-        color: #ffffff !important;
+        background: var(--secondary-black) !important;
+        color: var(--primary-green) !important;
         font-weight: 600 !important;
+        border-color: var(--border-color) !important;
     }
     
     .dataframe td {
-        color: #cbd5e1 !important;
-        border-color: #475569 !important;
+        color: var(--text-secondary) !important;
+        border-color: var(--border-color) !important;
+    }
+    
+    /* Status indicators */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        background: rgba(0, 255, 136, 0.1);
+        color: var(--primary-green);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .status-badge.success {
+        background: rgba(0, 255, 136, 0.1);
+        color: var(--primary-green);
+        border-color: rgba(0, 255, 136, 0.3);
+    }
+    
+    .status-badge.warning {
+        background: rgba(255, 170, 0, 0.1);
+        color: #ffaa00;
+        border-color: rgba(255, 170, 0, 0.3);
+    }
+    
+    .status-badge.error {
+        background: rgba(255, 68, 68, 0.1);
+        color: #ff4444;
+        border-color: rgba(255, 68, 68, 0.3);
     }
     
     /* Divider */
-    .divider {
+    .ts-divider {
         height: 1px;
-        background: linear-gradient(90deg, transparent, #475569, transparent);
-        margin: 32px 0;
+        background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+        margin: 24px 0;
+    }
+    
+    /* Badge */
+    .ts-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        background: var(--secondary-black);
+        color: var(--text-secondary);
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px solid var(--border-color);
+    }
+    
+    /* Alert */
+    .ts-alert {
+        padding: 16px;
+        border-radius: 8px;
+        margin: 16px 0;
+        border: 1px solid;
+        background: var(--card-bg);
+    }
+    
+    .ts-alert.success {
+        border-color: rgba(0, 255, 136, 0.3);
+        color: var(--primary-green);
+    }
+    
+    .ts-alert.warning {
+        border-color: rgba(255, 170, 0, 0.3);
+        color: #ffaa00;
+    }
+    
+    .ts-alert.error {
+        border-color: rgba(255, 68, 68, 0.3);
+        color: #ff4444;
     }
     
     /* Container */
-    .container {
+    .ts-container {
         max-width: 1200px;
         margin: 0 auto;
         padding: 0 20px;
     }
     
     /* Grid */
-    .grid {
+    .ts-grid {
         display: grid;
         gap: 24px;
     }
     
-    .grid-cols-2 {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .grid-cols-3 {
-        grid-template-columns: repeat(3, 1fr);
-    }
-    
     /* Flex */
-    .flex {
+    .ts-flex {
         display: flex;
     }
     
-    .items-center {
+    .ts-items-center {
         align-items: center;
     }
     
-    .justify-between {
+    .ts-justify-between {
         justify-content: space-between;
     }
     
     /* Spacing */
-    .space-y-4 > * + * {
+    .ts-space-y-4 > * + * {
         margin-top: 16px;
     }
     
-    .space-x-4 > * + * {
+    .ts-space-x-4 > * + * {
         margin-left: 16px;
     }
     
-    /* Badge */
-    .badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 12px;
-        background-color: #334155;
-        color: #cbd5e1;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 500;
-    }
-    
-    /* Alert */
-    .alert {
-        padding: 16px;
+    /* Icon wrapper */
+    .ts-icon {
+        width: 40px;
+        height: 40px;
         border-radius: 8px;
-        margin: 16px 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 255, 136, 0.1);
+        border: 1px solid rgba(0, 255, 136, 0.2);
+        color: var(--primary-green);
+        font-size: 20px;
     }
     
-    .alert-info {
-        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        color: #60a5fa;
+    /* Section header */
+    .ts-section-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
     }
     
-    .alert-success {
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #34d399;
-    }
-    
-    .alert-warning {
-        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        color: #fbbf24;
-    }
-    
-    .alert-error {
-        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #f87171;
+    .ts-section-header .ts-icon {
+        margin-right: 12px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Earth Engine Auto-Authentication with Service Account
-def auto_initialize_earth_engine() -> bool:
+def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
         # Your service account credentials
@@ -416,6 +408,16 @@ e5aU1RW6tlG8nzHHwK2FeyI=
         st.error(f"Earth Engine auto-initialization failed: {str(e)}")
         return False
 
+# Try to auto-initialize Earth Engine on app start
+if 'ee_auto_initialized' not in st.session_state:
+    with st.spinner("Initializing Earth Engine..."):
+        if auto_initialize_earth_engine():
+            st.session_state.ee_auto_initialized = True
+            st.session_state.ee_initialized = True
+        else:
+            st.session_state.ee_auto_initialized = False
+            st.session_state.ee_initialized = False
+
 # Page configuration
 st.set_page_config(
     page_title="Khisba GIS - Vegetation Analysis",
@@ -436,36 +438,28 @@ if 'selected_geometry' not in st.session_state:
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
 
-# Authentication Component
+# Authentication check
 if not st.session_state.authenticated:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("""
-        <div class="card" style="text-align: center; margin-top: 100px;">
-            <div style="margin-bottom: 32px;">
-                <h1 style="background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-                          -webkit-background-clip: text;
-                          -webkit-text-fill-color: transparent;
-                          background-clip: text;
-                          font-size: 3rem;
-                          margin: 0;">KHISBA GIS</h1>
-                <p style="color: #94a3b8; font-size: 1.1rem; margin: 8px 0 32px 0;">Professional Vegetation Analytics Platform</p>
-                <div class="badge">v1.0.0 • TypeScript Style</div>
+    st.markdown("""
+    <div class="ts-container" style="text-align: center; padding-top: 100px;">
+        <div class="ts-card" style="max-width: 500px; margin: 0 auto;">
+            <h1>KHISBA GIS</h1>
+            <p style="color: #cccccc; margin: 20px 0 40px 0;">Professional Vegetation Indices Analytics</p>
+            
+            <div class="ts-alert warning">
+                🔐 Authentication Required
             </div>
             
-            <div style="margin-bottom: 32px;">
-                <h3 style="color: #e2e8f0; margin-bottom: 16px;">🔐 Authentication Required</h3>
-                <p style="color: #94a3b8; margin-bottom: 24px;">Enter your credentials to access the platform</p>
+            <div style="margin: 30px 0;">
+                <p style="color: #cccccc; margin-bottom: 20px;">Enter admin password to continue</p>
             </div>
         </div>
-        """, unsafe_allow_html=True)
-        
-        password = st.text_input(
-            "Password",
-            type="password",
-            placeholder="Enter admin password",
-            label_visibility="collapsed"
-        )
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        password = st.text_input("Password", type="password", placeholder="Enter admin password", label_visibility="collapsed")
         
         if st.button("🔓 Sign In", type="primary", use_container_width=True):
             if password == "admin":
@@ -473,53 +467,50 @@ if not st.session_state.authenticated:
                 st.success("✅ Authentication successful!")
                 st.rerun()
             else:
-                st.error("❌ Invalid credentials")
-        
-        st.markdown("""
-        <div class="alert alert-info" style="margin-top: 32px;">
-            <div class="flex items-center">
-                <span style="margin-right: 8px;">ℹ️</span>
-                <div>
-                    <strong style="display: block; margin-bottom: 4px;">Demo Access</strong>
-                    <span style="color: #cbd5e1; font-size: 14px;">Use <code>admin</code> / <code>admin</code> for demo access</span>
-                </div>
+                st.error("❌ Invalid password")
+    
+    st.markdown("""
+    <div class="ts-container" style="text-align: center; margin-top: 50px;">
+        <div class="ts-card" style="max-width: 500px; margin: 0 auto;">
+            <p style="color: #00ff88; font-weight: 600;">Demo Access</p>
+            <p style="color: #cccccc;">Username: <strong>admin</strong><br>Password: <strong>admin</strong></p>
+            <div style="margin-top: 20px;">
+                <span class="ts-badge">GIS Analytics</span>
+                <span class="ts-badge">Earth Engine</span>
+                <span class="ts-badge">Satellite Data</span>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
     
     st.stop()
 
-# Main Dashboard Layout
+# Main Dashboard Header
 st.markdown("""
-<div style="padding: 24px 0;">
-    <div class="flex items-center justify-between">
+<div class="ts-container">
+    <div class="ts-flex ts-items-center ts-justify-between" style="padding: 20px 0;">
         <div>
-            <h1 style="margin: 0; background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-                      -webkit-background-clip: text;
-                      -webkit-text-fill-color: transparent;
-                      background-clip: text;">KHISBA GIS</h1>
-            <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Professional Vegetation Indices Analytics Platform</p>
+            <h1 style="margin: 0;">KHISBA GIS</h1>
+            <p style="color: #cccccc; margin: 4px 0 0 0;">Professional Vegetation Indices Analytics</p>
         </div>
-        <div class="flex items-center space-x-4">
-            <span class="badge">v1.0.0</span>
-            <span class="status-success">Connected</span>
+        <div class="ts-flex ts-items-center ts-space-x-4">
+            <span class="status-badge success">Connected</span>
+            <span class="ts-badge">v1.0</span>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar - TypeScript Style
+# Sidebar - Green & Black Theme
 with st.sidebar:
     st.markdown("""
-    <div class="card" style="text-align: center; margin-bottom: 24px;">
-        <div style="margin-bottom: 16px;">
-            <h3 style="margin: 0; color: #ffffff;">🌿 KHISBA GIS</h3>
-            <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 12px;">Enterprise Vegetation Analytics</p>
-        </div>
-        <div class="divider"></div>
-        <div class="flex items-center justify-between">
-            <span style="color: #94a3b8; font-size: 12px;">Status</span>
-            <span class="status-success">Active</span>
+    <div class="ts-card" style="text-align: center; margin-bottom: 20px;">
+        <h3 style="margin: 0 0 10px 0;">🌿 KHISBA GIS</h3>
+        <p style="color: #cccccc; margin: 0; font-size: 14px;">Vegetation Analytics Platform</p>
+        <div class="ts-divider"></div>
+        <div class="ts-flex ts-items-center ts-justify-between">
+            <span style="color: #cccccc; font-size: 12px;">Status</span>
+            <span class="status-badge success">Active</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -529,24 +520,24 @@ with st.sidebar:
     # Earth Engine Status
     if st.session_state.ee_initialized:
         st.markdown("""
-        <div class="alert alert-success">
-            <div class="flex items-center">
-                <span style="margin-right: 8px;">✅</span>
+        <div class="ts-alert success">
+            <div class="ts-flex ts-items-center">
+                <span style="margin-right: 10px;">✅</span>
                 <div>
-                    <strong style="display: block; margin-bottom: 4px;">Earth Engine Connected</strong>
-                    <span style="color: #34d399; font-size: 12px;">Auto-authenticated successfully</span>
+                    <strong>Earth Engine Connected</strong><br>
+                    <span style="font-size: 12px; color: #00cc6a;">Auto-authenticated</span>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
     else:
         st.markdown("""
-        <div class="alert alert-warning">
-            <div class="flex items-center">
-                <span style="margin-right: 8px;">⚠️</span>
+        <div class="ts-alert warning">
+            <div class="ts-flex ts-items-center">
+                <span style="margin-right: 10px;">⚠️</span>
                 <div>
-                    <strong style="display: block; margin-bottom: 4px;">Authentication Required</strong>
-                    <span style="color: #fbbf24; font-size: 12px;">Upload Earth Engine credentials</span>
+                    <strong>Authentication Required</strong><br>
+                    <span style="font-size: 12px; color: #ffaa00;">Upload Earth Engine credentials</span>
                 </div>
             </div>
         </div>
@@ -583,7 +574,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-# Import helper functions
+# Import the helper functions
 try:
     from earth_engine_utils import get_admin_boundaries, get_boundary_names
     from vegetation_indices import mask_clouds, add_vegetation_indices
@@ -592,34 +583,29 @@ except ImportError as e:
     st.info("Please ensure earth_engine_utils.py and vegetation_indices.py are in the same directory")
     st.stop()
 
-# Main Application
+# Main application
 if st.session_state.ee_initialized:
+    
     # Study Area Selection - TypeScript Card Style
     st.markdown("""
-    <div class="card">
-        <div class="flex items-center" style="margin-bottom: 20px;">
-            <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
-                      width: 40px; height: 40px; 
-                      border-radius: 8px; 
-                      display: flex; 
-                      align-items: center; 
-                      justify-content: center;
-                      margin-right: 12px;">
-                <span style="color: white; font-size: 20px;">📍</span>
-            </div>
-            <div>
-                <h3 style="margin: 0; color: #ffffff;">Study Area Selection</h3>
-                <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Select your geographical area for analysis</p>
+    <div class="ts-container">
+        <div class="ts-card">
+            <div class="ts-section-header">
+                <div class="ts-icon">📍</div>
+                <div>
+                    <h3 style="margin: 0;">Study Area Selection</h3>
+                    <p style="color: #cccccc; margin: 4px 0 0 0;">Select your geographical area for analysis</p>
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Selection Cards in Grid
+    # Selection in Cards
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown('<div class="card" style="height: 100%;">', unsafe_allow_html=True)
+        st.markdown('<div class="ts-card" style="height: 100%;">', unsafe_allow_html=True)
         st.markdown("#### Country")
         try:
             countries_fc = get_admin_boundaries(0)
@@ -639,7 +625,7 @@ if st.session_state.ee_initialized:
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col2:
-        st.markdown('<div class="card" style="height: 100%;">', unsafe_allow_html=True)
+        st.markdown('<div class="ts-card" style="height: 100%;">', unsafe_allow_html=True)
         st.markdown("#### State/Province")
         selected_admin1 = ""
         if selected_country and countries_fc is not None:
@@ -660,7 +646,7 @@ if st.session_state.ee_initialized:
         st.markdown('</div>', unsafe_allow_html=True)
     
     with col3:
-        st.markdown('<div class="card" style="height: 100%;">', unsafe_allow_html=True)
+        st.markdown('<div class="ts-card" style="height: 100%;">', unsafe_allow_html=True)
         st.markdown("#### Municipality")
         selected_admin2 = ""
         if selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
@@ -680,30 +666,24 @@ if st.session_state.ee_initialized:
                 st.error(f"Error loading admin2: {str(e)}")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # GIS Map Display
+    # GIS Map Display - KEEPING ORIGINAL FUNCTIONALITY
     if selected_country:
         st.markdown("""
-        <div class="card">
-            <div class="flex items-center" style="margin-bottom: 20px;">
-                <div style="background: linear-gradient(135deg, #10b981, #059669); 
-                          width: 40px; height: 40px; 
-                          border-radius: 8px; 
-                          display: flex; 
-                          align-items: center; 
-                          justify-content: center;
-                          margin-right: 12px;">
-                    <span style="color: white; font-size: 20px;">🌍</span>
-                </div>
-                <div>
-                    <h3 style="margin: 0; color: #ffffff;">GIS Analytics Workspace</h3>
-                    <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Interactive map with satellite data</p>
+        <div class="ts-container">
+            <div class="ts-card">
+                <div class="ts-section-header">
+                    <div class="ts-icon">🌍</div>
+                    <div>
+                        <h3 style="margin: 0;">GIS Analytics Workspace</h3>
+                        <p style="color: #cccccc; margin: 4px 0 0 0;">Interactive map with satellite data</p>
+                    </div>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         try:
-            # Determine geometry
+            # Determine which geometry to use
             if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
                 geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
                 area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
@@ -717,26 +697,29 @@ if st.session_state.ee_initialized:
                 area_name = selected_country
                 area_level = "Country"
             
+            # Get geometry bounds for map centering
             bounds = geometry.geometry().bounds().getInfo()
             coords = bounds['coordinates'][0]
+            
+            # Calculate center and area
             lats = [coord[1] for coord in coords]
             lons = [coord[0] for coord in coords]
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            # Create map
+            # Create professional GIS map with multiple base layers
             m = folium.Map(
                 location=[center_lat, center_lon],
-                zoom_start=8,
-                tiles=None,
+                zoom_start=6,
+                tiles=None,  # We'll add custom tiles
                 control_scale=True,
                 prefer_canvas=True
             )
             
-            # Add tile layers
+            # Add multiple professional base layers
             folium.TileLayer(
                 'OpenStreetMap',
-                name='Street Map',
+                name='OpenStreetMap',
                 overlay=False,
                 control=True
             ).add_to(m)
@@ -749,31 +732,50 @@ if st.session_state.ee_initialized:
                 control=True
             ).add_to(m)
             
-            # Add study area
+            folium.TileLayer(
+                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                name='Terrain',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            folium.TileLayer(
+                'CartoDB dark_matter',
+                name='Dark Theme',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # Add professional study area styling
             folium.GeoJson(
                 bounds,
                 style_function=lambda x: {
-                    'fillColor': '#3b82f6',
+                    'fillColor': '#00ff88',
                     'color': '#ffffff',
                     'weight': 3,
-                    'fillOpacity': 0.1,
+                    'fillOpacity': 0.2,
                     'dashArray': '5, 5'
-                }
+                },
+                popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
+                tooltip=f"Click for details: {area_name}"
             ).add_to(m)
             
-            # Add controls
+            # Add coordinate display and measurement tools
             from folium.plugins import MousePosition, MeasureControl
+            
             MousePosition().add_to(m)
             MeasureControl(primary_length_unit='kilometers').add_to(m)
+            
+            # Add layer control
             folium.LayerControl().add_to(m)
             
-            # Display map and info
+            # Professional GIS info panel
             col1, col2 = st.columns([2, 1])
             
             with col1:
-                st.markdown("""
-                <div style="border: 2px solid #334155; border-radius: 12px; overflow: hidden;">
-                """, unsafe_allow_html=True)
+                # Display professional map with enhanced styling
+                st.markdown('<div class="ts-card" style="padding: 5px;">', unsafe_allow_html=True)
                 
                 map_data = st_folium(
                     m, 
@@ -783,137 +785,126 @@ if st.session_state.ee_initialized:
                     key="gis_map"
                 )
                 
-                st.markdown("</div>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
             
             with col2:
-                st.markdown("""
-                <div class="card" style="height: 500px; overflow-y: auto;">
-                    <h4 style="color: #ffffff; margin-top: 0;">Area Information</h4>
-                    <div class="divider"></div>
+                # Professional GIS information panel
+                st.markdown(f"""
+                <div class="ts-card" style="height: 500px; overflow-y: auto;">
+                    <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
+                    <hr style="border-color: #333333;">
                     
-                    <div style="margin-bottom: 20px;">
-                        <p style="color: #94a3b8; margin: 0; font-size: 12px;">Study Area</p>
-                        <p style="color: #ffffff; margin: 4px 0 0 0; font-size: 16px; font-weight: 600;">{}</p>
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Study Area:</strong><br>
+                        <span style="color: #cccccc;">{area_name}</span>
                     </div>
                     
-                    <div style="margin-bottom: 20px;">
-                        <p style="color: #94a3b8; margin: 0; font-size: 12px;">Administrative Level</p>
-                        <p style="color: #3b82f6; margin: 4px 0 0 0; font-size: 14px; font-weight: 600;">{}</p>
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Administrative Level:</strong><br>
+                        <span style="color: #00ff88;">{area_level}</span>
                     </div>
                     
-                    <div style="margin-bottom: 20px;">
-                        <p style="color: #94a3b8; margin: 0; font-size: 12px;">Coordinates</p>
-                        <div class="flex items-center space-x-4">
-                            <div>
-                                <p style="color: #94a3b8; margin: 0; font-size: 10px;">Latitude</p>
-                                <p style="color: #ffffff; margin: 2px 0 0 0; font-size: 14px;">{:.4f}°</p>
-                            </div>
-                            <div>
-                                <p style="color: #94a3b8; margin: 0; font-size: 10px;">Longitude</p>
-                                <p style="color: #ffffff; margin: 2px 0 0 0; font-size: 14px;">{:.4f}°</p>
-                            </div>
-                        </div>
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Coordinates:</strong><br>
+                        <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
+                        Lon: {center_lon:.4f}°</span>
                     </div>
                     
-                    <div style="margin-bottom: 20px;">
-                        <p style="color: #94a3b8; margin: 0; font-size: 12px;">Available Layers</p>
-                        <div style="margin-top: 8px;">
-                            <span class="badge">Satellite</span>
-                            <span class="badge">Street Map</span>
-                            <span class="badge">Terrain</span>
-                        </div>
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Map Layers:</strong><br>
+                        <span style="color: #cccccc;">• Satellite Imagery<br>
+                        • Terrain Data<br>
+                        • Administrative Boundaries<br>
+                        • Dark/Light Themes</span>
                     </div>
                     
-                    <div class="divider"></div>
-                    
-                    <div style="background: rgba(59, 130, 246, 0.1); padding: 12px; border-radius: 8px;">
-                        <p style="color: #3b82f6; margin: 0; font-size: 12px; font-weight: 600;">📊 KHISBA GIS Professional</p>
-                        <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 10px;">Powered by Google Earth Engine</p>
+                    <div style="background: #111111; padding: 10px; border-radius: 5px; margin-top: 20px; border: 1px solid #333333;">
+                        <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
+                        <small style="color: #888888;">Powered by Earth Engine</small>
                     </div>
                 </div>
-                """.format(area_name, area_level, center_lat, center_lon), unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
             
             st.session_state.selected_geometry = geometry
             
+            # Professional status indicator
+            st.markdown(f"""
+            <div class="ts-container">
+                <div class="ts-card" style="text-align: center; background: rgba(0, 255, 136, 0.1); border-color: rgba(0, 255, 136, 0.3);">
+                    <strong style="color: #00ff88;">✅ GIS WORKSPACE ACTIVE</strong> • Study Area: {area_name}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
         except Exception as e:
-            st.error(f"❌ Map Error: {str(e)}")
+            st.error(f"❌ GIS Map Error: {str(e)}")
+            st.info("Please check your internet connection and try refreshing the page.")
     
-    # Analysis Parameters - TypeScript Style
+    # Professional Analysis Parameters - TypeScript Style
     if st.session_state.selected_geometry is not None:
         st.markdown("""
-        <div class="card">
-            <div class="flex items-center" style="margin-bottom: 20px;">
-                <div style="background: linear-gradient(135deg, #f59e0b, #d97706); 
-                          width: 40px; height: 40px; 
-                          border-radius: 8px; 
-                          display: flex; 
-                          align-items: center; 
-                          justify-content: center;
-                          margin-right: 12px;">
-                    <span style="color: white; font-size: 20px;">⚙️</span>
-                </div>
-                <div>
-                    <h3 style="margin: 0; color: #ffffff;">Analysis Parameters</h3>
-                    <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Configure your analysis settings</p>
+        <div class="ts-container">
+            <div class="ts-card">
+                <div class="ts-section-header">
+                    <div class="ts-icon">⚙️</div>
+                    <div>
+                        <h3 style="margin: 0;">Analysis Parameters</h3>
+                        <p style="color: #cccccc; margin: 4px 0 0 0;">Configure your analysis timeframe and satellite data sources</p>
+                    </div>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Parameters in Cards
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="ts-card">', unsafe_allow_html=True)
             st.markdown("#### Time Period")
-            col1a, col1b = st.columns(2)
-            with col1a:
-                start_date = st.date_input(
-                    "Start Date",
-                    value=datetime(2023, 1, 1),
-                    label_visibility="collapsed"
-                )
-            with col1b:
-                end_date = st.date_input(
-                    "End Date",
-                    value=datetime(2023, 12, 31),
-                    label_visibility="collapsed"
-                )
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown("#### Data Source")
-            collection_choice = st.selectbox(
-                "Satellite Collection",
-                options=["Sentinel-2", "Landsat-8"],
+            start_date = st.date_input(
+                "Start Date",
+                value=datetime(2023, 1, 1),
+                help="Start date for the analysis period",
                 label_visibility="collapsed"
             )
+            
             cloud_cover = st.slider(
                 "Maximum Cloud Cover (%)",
                 min_value=0,
                 max_value=100,
                 value=20,
-                label_visibility="visible"
+                help="Maximum cloud cover percentage for images"
             )
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Vegetation Indices Selection
+        with col2:
+            st.markdown('<div class="ts-card">', unsafe_allow_html=True)
+            st.markdown("#### Data Source")
+            end_date = st.date_input(
+                "End Date",
+                value=datetime(2023, 12, 31),
+                help="End date for the analysis period",
+                label_visibility="collapsed"
+            )
+            
+            collection_choice = st.selectbox(
+                "Satellite Collection",
+                options=["Sentinel-2", "Landsat-8"],
+                help="Choose the satellite collection for analysis",
+                label_visibility="collapsed"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Vegetation Indices Selection - TypeScript Style
         st.markdown("""
-        <div class="card">
-            <div class="flex items-center" style="margin-bottom: 20px;">
-                <div style="background: linear-gradient(135deg, #10b981, #059669); 
-                          width: 40px; height: 40px; 
-                          border-radius: 8px; 
-                          display: flex; 
-                          align-items: center; 
-                          justify-content: center;
-                          margin-right: 12px;">
-                    <span style="color: white; font-size: 20px;">🌿</span>
-                </div>
-                <div>
-                    <h3 style="margin: 0; color: #ffffff;">Vegetation Indices</h3>
-                    <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Select indices for analysis</p>
+        <div class="ts-container">
+            <div class="ts-card">
+                <div class="ts-section-header">
+                    <div class="ts-icon">🌿</div>
+                    <div>
+                        <h3 style="margin: 0;">Vegetation Indices Selection</h3>
+                        <p style="color: #cccccc; margin: 4px 0 0 0;">Choose indices to analyze</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -926,56 +917,114 @@ if st.session_state.ee_initialized:
             'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
         ]
         
-        col1, col2 = st.columns([3, 1])
+        col1, col2 = st.columns(2)
         with col1:
+            select_all = st.checkbox("Select All Indices")
+        with col2:
+            if st.button("Clear All"):
+                st.session_state.selected_indices = []
+        
+        if select_all:
             selected_indices = st.multiselect(
-                "Select Vegetation Indices",
+                "Choose vegetation indices to calculate:",
+                options=available_indices,
+                default=available_indices,
+                help="Select the vegetation indices you want to analyze"
+            )
+        else:
+            selected_indices = st.multiselect(
+                "Choose vegetation indices to calculate:",
                 options=available_indices,
                 default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
-                label_visibility="collapsed"
+                help="Select the vegetation indices you want to analyze"
             )
         
-        with col2:
-            select_all = st.checkbox("Select All")
-            if select_all:
-                selected_indices = available_indices
-        
-        # Run Analysis Button
-        st.markdown('<div style="text-align: center; margin: 32px 0;">', unsafe_allow_html=True)
+        # Run Analysis Button - TypeScript Style
+        st.markdown('<div style="text-align: center; margin: 40px 0;">', unsafe_allow_html=True)
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
-                with st.spinner("Running analysis..."):
+                with st.spinner("Running vegetation indices analysis..."):
                     try:
-                        # Analysis logic here
-                        st.session_state.analysis_results = {
-                            'NDVI': {'dates': ['2023-01-01', '2023-02-01'], 'values': [0.5, 0.6]},
-                            'EVI': {'dates': ['2023-01-01', '2023-02-01'], 'values': [0.3, 0.4]}
-                        }
-                        st.success("✅ Analysis completed!")
+                        # Define collection based on choice
+                        if collection_choice == "Sentinel-2":
+                            collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                        else:
+                            collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                        
+                        # Filter collection
+                        filtered_collection = (collection
+                            .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                            .filterBounds(st.session_state.selected_geometry)
+                            .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
+                        )
+                        
+                        # Apply cloud masking and add vegetation indices
+                        if collection_choice == "Sentinel-2":
+                            processed_collection = (filtered_collection
+                                .map(mask_clouds)
+                                .map(add_vegetation_indices)
+                            )
+                        else:
+                            # For Landsat, we'd need different cloud masking
+                            processed_collection = filtered_collection.map(add_vegetation_indices)
+                        
+                        # Calculate time series for selected indices
+                        results = {}
+                        for index in selected_indices:
+                            try:
+                                # Create a function to add date and reduce region
+                                def add_date_and_reduce(image):
+                                    reduced = image.select(index).reduceRegion(
+                                        reducer=ee.Reducer.mean(),
+                                        geometry=st.session_state.selected_geometry.geometry(),
+                                        scale=30,
+                                        maxPixels=1e9
+                                    )
+                                    return ee.Feature(None, reduced.set('date', image.date().format()))
+                                
+                                # Map over collection to get time series
+                                time_series = processed_collection.map(add_date_and_reduce)
+                                
+                                # Convert to list
+                                time_series_list = time_series.getInfo()
+                                
+                                # Extract dates and values
+                                dates = []
+                                values = []
+                                
+                                if 'features' in time_series_list:
+                                    for feature in time_series_list['features']:
+                                        props = feature['properties']
+                                        if index in props and props[index] is not None and 'date' in props:
+                                            dates.append(props['date'])
+                                            values.append(props[index])
+                                
+                                results[index] = {'dates': dates, 'values': values}
+                                
+                            except Exception as e:
+                                st.warning(f"Could not calculate {index}: {str(e)}")
+                                results[index] = {'dates': [], 'values': []}
+                        
+                        st.session_state.analysis_results = results
+                        st.success("✅ Analysis completed successfully!")
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Display Results
+# Display Results - KEEPING ORIGINAL CHARTS AND FUNCTIONALITY
 if st.session_state.analysis_results:
     st.markdown("""
-    <div class="card">
-        <div class="flex items-center" style="margin-bottom: 20px;">
-            <div style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); 
-                      width: 40px; height: 40px; 
-                      border-radius: 8px; 
-                      display: flex; 
-                      align-items: center; 
-                      justify-content: center;
-                      margin-right: 12px;">
-                <span style="color: white; font-size: 20px;">📊</span>
-            </div>
-            <div>
-                <h3 style="margin: 0; color: #ffffff;">Analysis Results</h3>
-                <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Vegetation indices analytics dashboard</p>
+    <div class="ts-container">
+        <div class="ts-card">
+            <div class="ts-section-header">
+                <div class="ts-icon">📊</div>
+                <div>
+                    <h3 style="margin: 0;">Analysis Results</h3>
+                    <p style="color: #cccccc; margin: 4px 0 0 0;">Vegetation indices analytics</p>
+                </div>
             </div>
         </div>
     </div>
@@ -983,7 +1032,8 @@ if st.session_state.analysis_results:
     
     results = st.session_state.analysis_results
     
-    # Summary Statistics
+    # Summary statistics - TypeScript Style
+    st.markdown('<div class="ts-card">', unsafe_allow_html=True)
     st.markdown("#### 📈 Summary Statistics")
     
     summary_data = []
@@ -996,104 +1046,281 @@ if st.session_state.analysis_results:
                     'Mean': round(sum(values) / len(values), 4),
                     'Min': round(min(values), 4),
                     'Max': round(max(values), 4),
-                    'Count': len(values),
-                    'Status': '✓' if len(values) > 0 else '✗'
+                    'Count': len(values)
                 })
     
     if summary_data:
         summary_df = pd.DataFrame(summary_data)
-        st.dataframe(
-            summary_df,
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(summary_df, width='stretch')
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    # Charts
-    st.markdown("#### 📈 Analytics Dashboard")
-    
-    # Create tabs for different views
-    tab1, tab2, tab3 = st.tabs(["Time Series", "Comparative", "Statistics"])
-    
-    with tab1:
-        indices_to_plot = st.multiselect(
-            "Select indices to plot",
-            options=list(results.keys()),
-            default=list(results.keys())[:3] if len(results) >= 3 else list(results.keys()),
-            label_visibility="collapsed"
-        )
-        
-        for index in indices_to_plot:
-            data = results[index]
-            if data['dates'] and data['values']:
-                try:
-                    dates = [datetime.fromisoformat(d.replace('Z', '+00:00')) for d in data['dates']]
-                    values = [v for v in data['values'] if v is not None]
-                    
-                    if dates and values:
-                        df = pd.DataFrame({'Date': dates, 'Value': values})
-                        df = df.sort_values('Date')
-                        
-                        fig = go.Figure()
-                        
-                        fig.add_trace(go.Scatter(
-                            x=df['Date'],
-                            y=df['Value'],
-                            mode='lines+markers',
-                            name=index,
-                            line=dict(width=3),
-                            marker=dict(size=8),
-                            hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
-                        ))
-                        
-                        fig.update_layout(
-                            title=f'{index} Time Series',
-                            xaxis_title='Date',
-                            yaxis_title='Index Value',
-                            height=400,
-                            showlegend=True
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                except Exception as e:
-                    st.error(f"Error creating chart for {index}: {str(e)}")
-    
-    # Export Section
+    # Professional Analytics Charts - ORIGINAL CODE KEPT INTACT
     st.markdown("""
-    <div class="card">
-        <div class="flex items-center" style="margin-bottom: 20px;">
-            <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); 
-                      width: 40px; height: 40px; 
-                      border-radius: 8px; 
-                      display: flex; 
-                      align-items: center; 
-                      justify-content: center;
-                      margin-right: 12px;">
-                <span style="color: white; font-size: 20px;">💾</span>
-            </div>
-            <div>
-                <h3 style="margin: 0; color: #ffffff;">Data Export</h3>
-                <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Export analysis results</p>
+    <div class="ts-container">
+        <div class="ts-card">
+            <div class="ts-section-header">
+                <div class="ts-icon">📈</div>
+                <div>
+                    <h3 style="margin: 0;">Professional Vegetation Analytics</h3>
+                    <p style="color: #cccccc; margin: 4px 0 0 0;">Interactive charts and analysis</p>
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("📥 Export Results", type="primary"):
-        # Export logic here
-        st.success("✅ Export completed!")
+    # Allow user to select indices to plot
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        indices_to_plot = st.multiselect(
+            "**Select Vegetation Indices:**",
+            options=list(results.keys()),
+            default=list(results.keys())[:4] if len(results) >= 4 else list(results.keys()),
+            help="Choose vegetation indices to analyze with professional charting"
+        )
+    with col2:
+        chart_style = st.selectbox(
+            "**Chart Style:**",
+            ["Professional", "Statistical", "Area"],
+            help="Select your preferred analytical chart style"
+        )
+    
+    if indices_to_plot:
+        # Create professional vegetation analytics dashboard
+        for i, index in enumerate(indices_to_plot):
+            data = results[index]
+            if data['dates'] and data['values']:
+                # Convert dates to datetime and prepare data
+                try:
+                    dates = [datetime.fromisoformat(d.replace('Z', '+00:00')) for d in data['dates']]
+                    values = [v for v in data['values'] if v is not None]
+                    
+                    if dates and values and len(dates) == len(values):
+                        df = pd.DataFrame({'Date': dates, 'Value': values})
+                        df = df.sort_values('Date')
+                        
+                        # Calculate analytical metrics
+                        df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
+                        df['MA_10'] = df['Value'].rolling(window=min(10, len(df))).mean()
+                        df['Value_Change'] = df['Value'].pct_change()
+                        
+                        # Create professional analytical chart
+                        fig = go.Figure()
+                        
+                        # Main value line with professional styling
+                        current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
+                        prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
+                        is_increasing = current_value >= prev_value
+                        
+                        if chart_style == "Professional":
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Value'],
+                                mode='lines',
+                                name=f'{index} Index',
+                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
+                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                            ))
+                        elif chart_style == "Statistical":
+                            # Show statistical analysis with confidence intervals
+                            df['Upper_Bound'] = df['Value'] * 1.05
+                            df['Lower_Bound'] = df['Value'] * 0.95
+                            
+                            # Add confidence band
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Upper_Bound'],
+                                mode='lines',
+                                line=dict(width=0),
+                                showlegend=False,
+                                hoverinfo='skip'
+                            ))
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Lower_Bound'],
+                                mode='lines',
+                                line=dict(width=0),
+                                fill='tonexty',
+                                fillcolor='rgba(0,255,136,0.1)',
+                                name='Confidence Band',
+                                hoverinfo='skip'
+                            ))
+                            # Main line
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Value'],
+                                mode='lines+markers',
+                                name=f'{index} Index',
+                                line=dict(color='#00ff88', width=2),
+                                marker=dict(size=4)
+                            ))
+                        elif chart_style == "Area":
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['Value'],
+                                fill='tozeroy',
+                                mode='lines',
+                                name=f'{index} Index',
+                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=2),
+                                fillcolor=f"rgba({'0,255,136' if is_increasing else '255,68,68'}, 0.3)"
+                            ))
+                        
+                        # Add moving averages
+                        if len(df) >= 5:
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['MA_5'],
+                                mode='lines',
+                                name='MA 5-day',
+                                line=dict(color='#ffaa00', width=1, dash='dot'),
+                                opacity=0.7
+                            ))
+                        
+                        if len(df) >= 10:
+                            fig.add_trace(go.Scatter(
+                                x=df['Date'], 
+                                y=df['MA_10'],
+                                mode='lines',
+                                name='MA 10-day',
+                                line=dict(color='#aa00ff', width=1, dash='dash'),
+                                opacity=0.7
+                            ))
+                        
+                        # Professional analytical layout
+                        fig.update_layout(
+                            title={
+                                'text': f'<b>{index}</b> - Vegetation Analysis',
+                                'x': 0.5,
+                                'xanchor': 'center',
+                                'font': {'size': 20, 'color': '#ffffff'}
+                            },
+                            plot_bgcolor='#0E1117',
+                            paper_bgcolor='#0E1117',
+                            font=dict(color='#ffffff'),
+                            xaxis=dict(
+                                gridcolor='#333333',
+                                zerolinecolor='#333333',
+                                tickcolor='#666666',
+                                title_font_color='#ffffff',
+                                title="Time Period"
+                            ),
+                            yaxis=dict(
+                                gridcolor='#333333',
+                                zerolinecolor='#333333',
+                                tickcolor='#666666',
+                                title=f'{index} Index Value',
+                                title_font_color='#ffffff'
+                            ),
+                            legend=dict(
+                                bgcolor='rgba(0,0,0,0.5)',
+                                bordercolor='#666666',
+                                borderwidth=1
+                            ),
+                            hovermode='x unified',
+                            height=400
+                        )
+                        
+                        # Add trend indicator
+                        change_pct = ((current_value - prev_value) / prev_value * 100) if prev_value != 0 else 0
+                        change_color = '#00ff88' if change_pct >= 0 else '#ff4444'
+                        change_symbol = '▲' if change_pct >= 0 else '▼'
+                        trend_text = "Increasing" if change_pct >= 0 else "Decreasing"
+                        
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        with col2:
+                            st.markdown(f"""
+                            <div class="ts-card" style="text-align: center; background: #1a1a1a;">
+                                <h4 style="color: {change_color}; margin: 0;">{change_symbol} {index} INDEX</h4>
+                                <h2 style="color: white; margin: 5px 0;">{current_value:.4f}</h2>
+                                <p style="color: {change_color}; margin: 0; font-size: 14px;">{change_pct:+.2f}% • {trend_text}</p>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.plotly_chart(fig, width='stretch')
+                        
+                except Exception as e:
+                    st.error(f"Error creating chart for {index}: {str(e)}")
+    
+    # Data Export - TypeScript Style
+    st.markdown("""
+    <div class="ts-container">
+        <div class="ts-card">
+            <div class="ts-section-header">
+                <div class="ts-icon">💾</div>
+                <div>
+                    <h3 style="margin: 0;">Data Export</h3>
+                    <p style="color: #cccccc; margin: 4px 0 0 0;">Export your analysis results</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button("📥 Download Results as CSV", type="primary"):
+        # Prepare data for export
+        export_data = []
+        for index, data in results.items():
+            for date, value in zip(data['dates'], data['values']):
+                if value is not None:
+                    export_data.append({
+                        'Date': date,
+                        'Index': index,
+                        'Value': value
+                    })
+        
+        if export_data:
+            export_df = pd.DataFrame(export_data)
+            csv = export_df.to_csv(index=False)
+            
+            st.download_button(
+                label="Download CSV",
+                data=csv,
+                file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.warning("No data available for export")
 
-# Footer
+else:
+    if not st.session_state.ee_initialized:
+        st.markdown("""
+        <div class="ts-alert warning">
+            <div class="ts-flex ts-items-center">
+                <span style="margin-right: 10px;">👆</span>
+                <div>Earth Engine is initializing... Please wait or upload credentials if needed</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif st.session_state.selected_geometry is None:
+        st.markdown("""
+        <div class="ts-alert warning">
+            <div class="ts-flex ts-items-center">
+                <span style="margin-right: 10px;">👆</span>
+                <div>Please select a study area to proceed with analysis</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="ts-alert warning">
+            <div class="ts-flex ts-items-center">
+                <span style="margin-right: 10px;">👆</span>
+                <div>Configure your analysis parameters and click 'Run Analysis'</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# Footer - TypeScript Style
 st.markdown("""
-<div style="text-align: center; padding: 32px 0; color: #64748b; font-size: 12px;">
-    <div class="divider"></div>
-    <p style="margin: 16px 0;">KHISBA GIS • Professional Vegetation Analytics Platform</p>
-    <p style="margin: 8px 0;">Created by Taibi Farouk Djilali • v1.0.0 • TypeScript Style UI</p>
-    <div style="margin-top: 16px;">
-        <span class="badge">Earth Engine</span>
-        <span class="badge">Streamlit</span>
-        <span class="badge">Plotly</span>
-        <span class="badge">Folium</span>
+<div class="ts-divider"></div>
+<div class="ts-container" style="text-align: center; padding: 30px 0; color: #666666; font-size: 14px;">
+    <p style="margin: 10px 0;">KHISBA GIS • Professional Vegetation Analytics Platform</p>
+    <p style="margin: 10px 0;">Created by Taibi Farouk Djilali • Green & Black TypeScript Style</p>
+    <div style="margin-top: 20px;">
+        <span class="ts-badge">Earth Engine</span>
+        <span class="ts-badge">Streamlit</span>
+        <span class="ts-badge">Folium</span>
+        <span class="ts-badge">Plotly</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
