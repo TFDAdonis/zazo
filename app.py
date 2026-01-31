@@ -5,13 +5,13 @@ import os
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
+import numpy as np
 
 # Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
@@ -102,6 +102,12 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'map_view' not in st.session_state:
+    st.session_state.map_view = "2d"  # Default to 2D view
+if 'current_zoom' not in st.session_state:
+    st.session_state.current_zoom = 6
+if 'globe_rotation' not in st.session_state:
+    st.session_state.globe_rotation = {'lat': 0, 'lon': 0}
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -215,6 +221,18 @@ else:
         except Exception as e:
             st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
 
+# Map View Toggle in Sidebar
+st.sidebar.markdown("### 🌍 **MAP VIEW MODE**")
+map_view = st.sidebar.radio(
+    "Select Map View:",
+    ["🗺️ 2D Interactive Map", "🌐 3D Interactive Globe"],
+    index=0 if st.session_state.map_view == "2d" else 1,
+    help="Switch between 2D map and 3D globe views"
+)
+
+# Update session state
+st.session_state.map_view = "2d" if map_view.startswith("🗺️") else "3d"
+
 # Import the helper functions
 try:
     from earth_engine_utils import get_admin_boundaries, get_boundary_names
@@ -303,6 +321,14 @@ if st.session_state.ee_initialized:
     if selected_country:
         st.markdown("### 🌍 **KHISBA GIS ANALYTICS WORKSPACE**")
         
+        # Map view indicator
+        view_mode = "🗺️ 2D INTERACTIVE MAP" if st.session_state.map_view == "2d" else "🌐 3D INTERACTIVE GLOBE"
+        st.markdown(f"""
+        <div style="text-align: center; background: linear-gradient(90deg, #1a1a2a, #2a1a3a); padding: 10px; border-radius: 5px; margin: 10px 0; border: 2px solid #00ff88;">
+            <strong style="color: #00ff88;">{view_mode}</strong> • <span style="color: #cccccc;">{"Drag to pan | Scroll to zoom" if st.session_state.map_view == "2d" else "Drag to rotate globe | Scroll to zoom"}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
         try:
             # Determine which geometry to use
             if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
@@ -328,122 +354,507 @@ if st.session_state.ee_initialized:
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            # Create professional GIS map with multiple base layers
-            m = folium.Map(
-                location=[center_lat, center_lon],
-                zoom_start=6,
-                tiles=None,  # We'll add custom tiles
-                control_scale=True,
-                prefer_canvas=True
-            )
-            
-            # Add multiple professional base layers
-            folium.TileLayer(
-                'OpenStreetMap',
-                name='OpenStreetMap',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            folium.TileLayer(
-                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                name='Satellite',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            folium.TileLayer(
-                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                name='Terrain',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            folium.TileLayer(
-                'CartoDB dark_matter',
-                name='Dark Theme',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            # Add professional study area styling
-            folium.GeoJson(
-                bounds,
-                style_function=lambda x: {
-                    'fillColor': '#00ff88',
-                    'color': '#ffffff',
-                    'weight': 3,
-                    'fillOpacity': 0.2,
-                    'dashArray': '5, 5'
-                },
-                popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
-                tooltip=f"Click for details: {area_name}"
-            ).add_to(m)
-            
-            # Add coordinate display and measurement tools
-            from folium.plugins import MousePosition, MeasureControl
-            
-            MousePosition().add_to(m)
-            MeasureControl(primary_length_unit='kilometers').add_to(m)
-            
-            # Add layer control
-            folium.LayerControl().add_to(m)
-            
-            # Professional GIS info panel
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                # Display professional map with enhanced styling
+            if st.session_state.map_view == "2d":
+                # Create 2D Interactive Map with Folium
                 st.markdown("""
-                <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
+                <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
                 """, unsafe_allow_html=True)
                 
+                # Create a beautiful interactive 2D map
+                m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=st.session_state.current_zoom,
+                    tiles=None,
+                    control_scale=True,
+                    prefer_canvas=True,
+                    max_bounds=True,
+                    max_lat=85,
+                    min_lat=-85
+                )
+                
+                # Add multiple base layers
+                
+                # OpenStreetMap (always works)
+                folium.TileLayer(
+                    'OpenStreetMap',
+                    name='🗺️ Street Map',
+                    attr='OpenStreetMap contributors',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                # CartoDB Dark Matter
+                folium.TileLayer(
+                    'CartoDB dark_matter',
+                    name='🌑 Dark Theme',
+                    attr='CartoDB',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                # CartoDB Positron
+                folium.TileLayer(
+                    'CartoDB positron',
+                    name='☀️ Light Theme',
+                    attr='CartoDB',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                # Stamen Terrain
+                folium.TileLayer(
+                    'Stamen Terrain',
+                    name='🏔️ Terrain',
+                    attr='Stamen',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                # Try ESRI Satellite
+                try:
+                    folium.TileLayer(
+                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                        name='🛰️ Satellite',
+                        attr='Esri',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
+                except:
+                    pass
+                
+                # Add study area with glowing effect
+                study_area_style = {
+                    'fillColor': '#00ff88',
+                    'color': '#ffffff',
+                    'weight': 4,
+                    'fillOpacity': 0.3,
+                    'dashArray': '5, 5',
+                    'opacity': 0.8
+                }
+                
+                # Add GeoJson with popup
+                folium.GeoJson(
+                    bounds,
+                    style_function=lambda x: study_area_style,
+                    popup=folium.Popup(
+                        f"""
+                        <div style="font-family: Arial, sans-serif; padding: 10px;">
+                            <h3 style="color: #00ff88; margin-top: 0;">📌 STUDY AREA</h3>
+                            <hr style="border-color: #00ff88;">
+                            <p><strong>📍 Location:</strong> {area_name}</p>
+                            <p><strong>📊 Level:</strong> {area_level}</p>
+                            <p><strong>🌐 Coordinates:</strong><br>
+                            Lat: {center_lat:.4f}°<br>
+                            Lon: {center_lon:.4f}°</p>
+                            <p><strong>🔍 Status:</strong> Active for analysis</p>
+                            <div style="background: #1a1a1a; padding: 8px; border-radius: 5px; margin-top: 10px;">
+                                <small style="color: #00ff88;">KHISBA GIS Professional</small>
+                            </div>
+                        </div>
+                        """, 
+                        max_width=350
+                    ),
+                    tooltip=f"📍 {area_name} | Click for details"
+                ).add_to(m)
+                
+                # Add a marker at the center
+                folium.CircleMarker(
+                    location=[center_lat, center_lon],
+                    radius=10,
+                    popup=f"Center: {center_lat:.4f}, {center_lon:.4f}",
+                    color='#00ff88',
+                    fill=True,
+                    fillColor='#00ff88',
+                    fillOpacity=0.7,
+                    weight=3
+                ).add_to(m)
+                
+                # Add plugins
+                from folium.plugins import MousePosition, MeasureControl, Fullscreen, MiniMap
+                
+                # Mouse position
+                MousePosition(
+                    position='bottomleft',
+                    separator=' | ',
+                    empty_string='Drag map to explore',
+                    lng_first=True,
+                    num_digits=4,
+                    prefix='Coordinates:',
+                    lat_formatter=lambda x: f'Lat: {x:.4f}°',
+                    lng_formatter=lambda x: f'Lon: {x:.4f}°'
+                ).add_to(m)
+                
+                # Measurement tool
+                MeasureControl(
+                    position='bottomleft',
+                    primary_length_unit='kilometers',
+                    secondary_length_unit='miles',
+                    primary_area_unit='sqkilometers',
+                    secondary_area_unit='acres'
+                ).add_to(m)
+                
+                # Fullscreen mode
+                Fullscreen(
+                    position='topright',
+                    title='Expand me',
+                    title_cancel='Exit fullscreen',
+                    force_separate_button=True
+                ).add_to(m)
+                
+                # Mini map
+                minimap = MiniMap(
+                    tile_layer='CartoDB dark_matter',
+                    position='bottomright',
+                    width=150,
+                    height=150,
+                    zoom_level_offset=-5,
+                    toggle_display=True
+                )
+                m.add_child(minimap)
+                
+                # Add layer control
+                folium.LayerControl(
+                    position='topright',
+                    collapsed=True
+                ).add_to(m)
+                
+                # Display the map
                 map_data = st_folium(
                     m, 
                     width=None, 
-                    height=500,
-                    returned_objects=["last_clicked", "bounds"],
-                    key="gis_map"
+                    height=600,
+                    returned_objects=["last_clicked", "bounds", "zoom"],
+                    key="2d_map"
                 )
+                
+                # Update zoom state
+                if map_data and 'zoom' in map_data and map_data['zoom'] is not None:
+                    st.session_state.current_zoom = map_data['zoom']
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+            else:
+                # Create 3D Interactive Globe with Plotly
+                st.markdown("""
+                <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
+                """, unsafe_allow_html=True)
+                
+                # Create 3D globe
+                fig = go.Figure()
+                
+                # Add globe surface (Earth sphere)
+                # Create sphere coordinates
+                u = np.linspace(0, 2 * np.pi, 100)
+                v = np.linspace(0, np.pi, 50)
+                u, v = np.meshgrid(u, v)
+                
+                r = 1.0  # Earth radius
+                x = r * np.sin(v) * np.cos(u)
+                y = r * np.sin(v) * np.sin(u)
+                z = r * np.cos(v)
+                
+                # Create Earth texture colors (blue-green-brown)
+                colorscale = [
+                    [0, '#1a5f7a'],      # Deep ocean
+                    [0.2, '#2a8bb9'],    # Ocean
+                    [0.4, '#57a7d4'],    # Shallow water
+                    [0.6, '#89c2d9'],    # Coast
+                    [0.7, '#a8d5ba'],    # Lowlands
+                    [0.8, '#8fbc8f'],    # Vegetation
+                    [0.9, '#b8860b'],    # Mountains
+                    [1.0, '#8b7355']     # High mountains
+                ]
+                
+                # Add Earth surface
+                fig.add_trace(go.Surface(
+                    x=x, y=y, z=z,
+                    colorscale=colorscale,
+                    showscale=False,
+                    opacity=0.9,
+                    lighting=dict(
+                        ambient=0.7,
+                        diffuse=0.9,
+                        roughness=0.8,
+                        specular=0.9
+                    ),
+                    lightposition=dict(x=10000, y=10000, z=10000)
+                ))
+                
+                # Add atmosphere glow
+                fig.add_trace(go.Surface(
+                    x=x*1.02, y=y*1.02, z=z*1.02,
+                    colorscale=[[0, 'rgba(135, 206, 235, 0.1)'], [1, 'rgba(135, 206, 235, 0.05)']],
+                    showscale=False,
+                    opacity=0.3
+                ))
+                
+                # Convert study area center to 3D coordinates
+                lat_rad = np.radians(center_lat)
+                lon_rad = np.radians(center_lon)
+                
+                marker_x = r * np.cos(lat_rad) * np.cos(lon_rad)
+                marker_y = r * np.cos(lat_rad) * np.sin(lon_rad)
+                marker_z = r * np.sin(lat_rad)
+                
+                # Add study area marker on globe
+                fig.add_trace(go.Scatter3d(
+                    x=[marker_x],
+                    y=[marker_y],
+                    z=[marker_z],
+                    mode='markers+text',
+                    marker=dict(
+                        size=15,
+                        color='#00ff88',
+                        symbol='circle',
+                        line=dict(color='white', width=3)
+                    ),
+                    text=["📍"],
+                    textposition="top center",
+                    textfont=dict(size=25, color='#00ff88'),
+                    name=f"📍 {area_name}",
+                    hoverinfo='text',
+                    hovertext=f"""
+                    <b>📍 Study Area:</b> {area_name}<br>
+                    <b>📊 Level:</b> {area_level}<br>
+                    <b>🌐 Coordinates:</b> {center_lat:.4f}°N, {center_lon:.4f}°E<br>
+                    <b>🔍 Status:</b> Active for analysis
+                    """
+                ))
+                
+                # Add latitude/longitude grid
+                # Latitude lines
+                for lat in range(-80, 81, 20):
+                    lat_rad = np.radians(lat)
+                    lon_points = np.linspace(0, 2*np.pi, 100)
+                    x_lat = r * np.cos(lat_rad) * np.cos(lon_points)
+                    y_lat = r * np.cos(lat_rad) * np.sin(lon_points)
+                    z_lat = r * np.sin(lat_rad) * np.ones_like(lon_points)
+                    
+                    fig.add_trace(go.Scatter3d(
+                        x=x_lat, y=y_lat, z=z_lat,
+                        mode='lines',
+                        line=dict(color='rgba(255, 255, 255, 0.2)', width=1),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+                
+                # Longitude lines
+                for lon in range(0, 360, 30):
+                    lon_rad = np.radians(lon)
+                    lat_points = np.linspace(-np.pi/2 + 0.1, np.pi/2 - 0.1, 100)
+                    x_lon = r * np.cos(lat_points) * np.cos(lon_rad)
+                    y_lon = r * np.cos(lat_points) * np.sin(lon_rad)
+                    z_lon = r * np.sin(lat_points)
+                    
+                    fig.add_trace(go.Scatter3d(
+                        x=x_lon, y=y_lon, z=z_lon,
+                        mode='lines',
+                        line=dict(color='rgba(255, 255, 255, 0.2)', width=1),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+                
+                # Configure globe layout
+                fig.update_layout(
+                    title=dict(
+                        text=f"<b>3D Interactive Globe</b><br><span style='font-size:14px;color:#cccccc'>📍 {area_name} • Drag to rotate globe</span>",
+                        x=0.5,
+                        xanchor='center',
+                        font=dict(size=20, color='white')
+                    ),
+                    scene=dict(
+                        xaxis=dict(
+                            showbackground=False,
+                            showticklabels=False,
+                            showgrid=False,
+                            zeroline=False,
+                            title=''
+                        ),
+                        yaxis=dict(
+                            showbackground=False,
+                            showticklabels=False,
+                            showgrid=False,
+                            zeroline=False,
+                            title=''
+                        ),
+                        zaxis=dict(
+                            showbackground=False,
+                            showticklabels=False,
+                            showgrid=False,
+                            zeroline=False,
+                            title=''
+                        ),
+                        aspectmode='data',
+                        camera=dict(
+                            eye=dict(
+                                x=1.5 * np.cos(st.session_state.globe_rotation['lon'] * np.pi/180),
+                                y=1.5 * np.sin(st.session_state.globe_rotation['lon'] * np.pi/180),
+                                z=1.0 + 0.5 * np.sin(st.session_state.globe_rotation['lat'] * np.pi/180)
+                            ),
+                            up=dict(x=0, y=0, z=1),
+                            center=dict(x=0, y=0, z=0)
+                        ),
+                        bgcolor='#0a0a0a'
+                    ),
+                    paper_bgcolor='#0a0a0a',
+                    plot_bgcolor='#0a0a0a',
+                    font=dict(color='white'),
+                    height=600,
+                    showlegend=True,
+                    legend=dict(
+                        x=0.02,
+                        y=0.98,
+                        bgcolor='rgba(0,0,0,0.5)',
+                        bordercolor='#666666',
+                        borderwidth=1,
+                        font=dict(size=12)
+                    ),
+                    margin=dict(l=0, r=0, t=50, b=0)
+                )
+                
+                # Display the 3D globe
+                st.plotly_chart(fig, use_container_width=True, config={
+                    'displayModeBar': True,
+                    'scrollZoom': True,
+                    'displaylogo': False,
+                    'modeBarButtonsToAdd': ['resetCameraDefault3d', 'resetCameraLastSave3d'],
+                    'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d']
+                })
+                
+                # Globe controls
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Reset Globe View", type="secondary"):
+                        st.session_state.globe_rotation = {'lat': 0, 'lon': 0}
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🎯 Center on Study Area", type="secondary"):
+                        st.session_state.globe_rotation = {'lat': center_lat, 'lon': center_lon}
+                        st.rerun()
                 
                 st.markdown("</div>", unsafe_allow_html=True)
             
+            # Map/Globe controls info
+            if st.session_state.map_view == "2d":
+                controls_info = """
+                <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #00ff88;">
+                    <h4 style="color: #00ff88; margin-top: 0;">🎮 2D Map Controls:</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+                        <div>
+                            <strong style="color: #ffffff;">🖱️ Navigation:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • <strong>Drag:</strong> Pan map<br>
+                            • <strong>Scroll:</strong> Zoom in/out<br>
+                            • <strong>Click:</strong> Get coordinates
+                            </span>
+                        </div>
+                        <div>
+                            <strong style="color: #ffffff;">🗺️ Layers:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • Click <strong>layers icon</strong><br>
+                            • Switch between views<br>
+                            • Multiple styles available
+                            </span>
+                        </div>
+                        <div>
+                            <strong style="color: #ffffff;">🛠️ Tools:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • <strong>Measure:</strong> Distance/area<br>
+                            • <strong>Fullscreen:</strong> Expand view<br>
+                            • <strong>Mini-map:</strong> Overview
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """
+            else:
+                controls_info = """
+                <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #00ff88;">
+                    <h4 style="color: #00ff88; margin-top: 0;">🎮 3D Globe Controls:</h4>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px;">
+                        <div>
+                            <strong style="color: #ffffff;">🖱️ Navigation:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • <strong>Drag:</strong> Rotate globe<br>
+                            • <strong>Scroll:</strong> Zoom in/out<br>
+                            • <strong>Right-drag:</strong> Pan view
+                            </span>
+                        </div>
+                        <div>
+                            <strong style="color: #ffffff;">🌍 Features:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • <strong>3D Earth:</strong> Realistic globe<br>
+                            • <strong>Atmosphere:</strong> Glow effect<br>
+                            • <strong>Lat/Long:</strong> Grid lines
+                            </span>
+                        </div>
+                        <div>
+                            <strong style="color: #ffffff;">🎯 Actions:</strong><br>
+                            <span style="color: #cccccc; font-size: 0.9em;">
+                            • <strong>Reset:</strong> Default view<br>
+                            • <strong>Center:</strong> On study area<br>
+                            • <strong>Hover:</strong> See details
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                """
+            
+            st.markdown(controls_info, unsafe_allow_html=True)
+            
+            # Professional GIS information panel
+            col1, col2 = st.columns([1, 1])
             with col2:
-                # Professional GIS information panel
+                current_view_desc = "2D Interactive Map with multiple layers and measurement tools" if st.session_state.map_view == "2d" else "3D Interactive Globe with realistic Earth visualization"
+                
                 st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
-                    <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
+                <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15);">
+                    <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🌍 GIS DATA PANEL</h4>
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">{'2D MAP VIEW' if st.session_state.map_view == '2d' else '3D GLOBE VIEW'}</span>
+                    </div>
                     <hr style="border-color: #00ff88;">
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">Study Area:</strong><br>
+                        <strong style="color: #ffffff;">📌 Study Area:</strong><br>
                         <span style="color: #cccccc;">{area_name}</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">Administrative Level:</strong><br>
+                        <strong style="color: #ffffff;">📊 Administrative Level:</strong><br>
                         <span style="color: #00ff88;">{area_level}</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">Coordinates:</strong><br>
-                        <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
+                        <strong style="color: #ffffff;">📍 Coordinates:</strong><br>
+                        <span style="color: #cccccc; font-family: monospace;">Lat: {center_lat:.4f}°<br>
                         Lon: {center_lon:.4f}°</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">Map Layers:</strong><br>
-                        <span style="color: #cccccc;">• Satellite Imagery<br>
-                        • Terrain Data<br>
-                        • Administrative Boundaries<br>
-                        • Dark/Light Themes</span>
+                        <strong style="color: #ffffff;">🔍 Current View:</strong><br>
+                        <span style="color: #00ff88;">{current_view_desc}</span>
                     </div>
                     
-                    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px;">
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">🔄 Switch View:</strong><br>
+                        <span style="color: #cccccc; font-size: 0.9em;">
+                        Use sidebar toggle to switch between<br>
+                        2D Map and 3D Globe views
+                        </span>
+                    </div>
+                    
+                    <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 20px; border-left: 3px solid #00ff88;">
+                        <small style="color: #00ff88; display: block; margin-bottom: 5px;">💡 Pro Tip:</small>
+                        <small style="color: #888888; font-size: 0.85em;">
+                        {'• Switch to 3D Globe for global perspective<br>• Use measurement tools for analysis<br>• Click study area for detailed info' if st.session_state.map_view == '2d' else '• Switch to 2D Map for detailed analysis<br>• Drag to explore different continents<br>• Hover over marker for area details'}
+                        </small>
+                    </div>
+                    
+                    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px; text-align: center;">
                         <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
-                        <small style="color: #888888;">Powered by Earth Engine</small>
+                        <small style="color: #888888;">Hybrid 2D/3D GIS Visualization</small>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -451,9 +862,11 @@ if st.session_state.ee_initialized:
             st.session_state.selected_geometry = geometry
             
             # Professional status indicator
+            view_icon = "🗺️" if st.session_state.map_view == "2d" else "🌐"
             st.markdown(f"""
-            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                <strong style="color: white;">✅ GIS WORKSPACE ACTIVE</strong> • Study Area: {area_name}
+            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 12px; border-radius: 8px; margin: 15px 0; border: 1px solid #ffffff;">
+                <strong style="color: white; font-size: 1.1em;">✅ GIS WORKSPACE ACTIVE</strong><br>
+                <span style="color: #e8f5e8; font-size: 0.9em;">{view_icon} {area_name} • {area_level} • {view_mode}</span>
             </div>
             """, unsafe_allow_html=True)
             
