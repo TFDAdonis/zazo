@@ -1,0 +1,8 @@
+streamlit==1.28.0
+pandas==2.1.0
+folium==0.14.0
+streamlit-folium==0.17.0
+plotly==5.17.0
+matplotlib==3.8.0
+geemap==0.29.1
+earthengine-api==0.1.371
