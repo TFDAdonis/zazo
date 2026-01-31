@@ -487,29 +487,38 @@ if st.session_state.ee_initialized:
                 })
             
             # Update layout
-            fig.update_layout(
-                title=dict(
-                    text=f"<b>Interactive 3D/2D Map</b><br><span style='font-size:14px;color:#cccccc'>📍 {area_name} • Zoom: {st.session_state.current_zoom:.1f}</span>",
-                    x=0.5,
-                    xanchor='center',
-                    font=dict(size=20, color='white')
-                ),
-                mapbox=mapbox_config,
-                height=600,
-                paper_bgcolor='#0a0a0a',
-                plot_bgcolor='#0a0a0a',
-                font=dict(color='white'),
-                showlegend=True,
-                legend=dict(
-                    x=0.02,
-                    y=0.98,
-                    bgcolor='rgba(0,0,0,0.5)',
-                    bordercolor='#666666',
-                    borderwidth=1,
-                    font=dict(size=12)
-                ),
-                margin=dict(l=0, r=0, t=50, b=0)
-            )
+           fig.update_layout(
+                            title={
+                                'text': f'<b>{index}</b> - Vegetation Analysis',
+                                'x': 0.5,
+                                'xanchor': 'center',
+                                'font': {'size': 20, 'color': '#ffffff'}
+                            },
+                            plot_bgcolor='#0E1117',
+                            paper_bgcolor='#0E1117',
+                            font=dict(color='#ffffff'),
+                            xaxis=dict(
+                                gridcolor='#333333',
+                                zerolinecolor='#333333',
+                                tickcolor='#666666',
+                                title_font_color='#ffffff',
+                                title="Time Period"
+                            ),
+                            yaxis=dict(
+                                gridcolor='#333333',
+                                zerolinecolor='#333333',
+                                tickcolor='#666666',
+                                title=f'{index} Index Value',
+                                title_font_color='#ffffff'
+                            ),
+                            legend=dict(
+                                bgcolor='rgba(0,0,0,0.5)',
+                                bordercolor='#666666',
+                                borderwidth=1
+                            ),
+                            hovermode='x unified',
+                            height=400
+                        )
             
             # Display the interactive map
             st.plotly_chart(fig, use_container_width=True, config={
