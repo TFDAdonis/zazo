@@ -11,8 +11,77 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
-from earth_engine_utils import initialize_earth_engine, get_admin_boundaries, get_boundary_names
-from vegetation_indices import mask_clouds, add_vegetation_indices
+import traceback
+
+# Earth Engine Auto-Authentication with Service Account
+def auto_initialize_earth_engine():
+    """Automatically initialize Earth Engine with service account credentials"""
+    try:
+        # Your service account credentials
+        service_account_info = {
+            "type": "service_account",
+            "project_id": "citric-hawk-457513-i6",
+            "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
+            "private_key": """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
+JUTNzx3h+QvvDCvZ2B6XZTofknuAFPW2LqAzZustznJJFkCmO3Nutct+W/iDQCG0
+1DjOQcbcr/jWr+mnRLVOkUkQc/kzZ8zaMQqU8HpXjS1mdhpsrbUaRKoEgfo3I3Bp
+dFcJ/caC7TSr8VkGnZcPEZyXVsj8dLSEzomdkX+mDlJlgCrNfu3Knu+If5lXh3Me
+SKiMWsfMnasiv46oD4szBzg6HLgoplmNka4NiwfeM7qROYnCd+5conyG8oiU00Xe
+zC2Ekzo2dWsCw4zIJD6IdAcvgdrqH63fCqDFmAjEBZ69h8fWrdnsq56dAIpt0ygl
+P9ADiRbVAgMBAAECggEALO7AnTqBGy2AgxhMP8iYEUdiu0mtvIIxV8HYl2QOC2ta
+3GzrE8J0PJs8J99wix1cSmIRkH9hUP6dHvy/0uYjZ1aTi84HHtH1LghE2UFdySKy
+RJqqwyozaDmx15b8Jnj8Wdc91miIR6KkQvVcNVuwalcf6jIAWlQwGp/jqIq9nloN
+eld6xNbEmacORz1qT+4/uxOE05mrrZHC4kIKtswi8Io4ExVe61VxXsXWSHrMCGz0
+TiSGr2ORSlRWC/XCGCu7zFIJU/iw6BiNsxryk6rjqQrcAtmoFTFx0fWbjYkG1DDs
+k/9Dov1gyx0OtEyX8beoaf0Skcej4zdfeuido2A1sQKBgQD4IrhFn50i4/pa9sk1
+g7v1ypGTrVA3pfvj6c7nTgzj9oyJnlU3WJwCqLw1cTFiY84+ekYP15wo8xsu5VZd
+YLzOKEg3B8g899Ge14vZVNd6cNfRyMk4clGrDwGnZ4OAQkdsT/AyaCGRIcyu9njA
+xdmWa+6VPMG7U65f/656XGwkBQKBgQDLgVyRE2+r1XCY+tdtXtga9sQ4LoiYHzD3
+eDHe056qmwk8jf1A1HekILnC1GyeaKkOUd4TEWhVBgQpsvtC4Z2zPXlWR8N7SwNu
+SFAhy3OnHTZQgrRWFA8eBjeI0YoXmk5m6uMQ7McmDlFxxXenFi+qSl3Cu4aGGuOy
+cfyWMbTwkQKBgAoKfaJznww2ZX8g1WuQ9R4xIEr1jHV0BglnALRjeCoRZAZ9nb0r
+nMSOx27yMallmIb2s7cYZn1RuRvgs+n7bCh7gNCZRAUTkiv3VPVqdX3C6zjWAy6B
+kcR2Sv7XNX8PL4y2f2XKyPDyiTHbT2+dkfyASZtIZh6KeFfyJMFW1BlxAoGAAeG6
+V2UUnUQl/GQlZc+AtA8gFVzoym9PZppn66WNTAqO9U5izxyn1o6u6QxJzNUu6wD6
+yrZYfqDFnRUYma+4Y5Xn71JOjm9NItHsW8Oj2CG/BNOQk1MwKJjqHovBeSJmIzF8
+1AU8ei+btS+cQaFE45A4ebp+LfNFs7q2GTVwdOECgYEAtHkMqigOmZdR3QAcZTjL
+3aeOMGVHB2pHYosTgslD9Yp+hyVHqSdyCplHzWB3d8roIecW4MEb0mDxlaTdZfmR
+dtBYiTzMxLezHsRZ4KP4NtGAE3iTL1b6DXuoI84+H/HaQ1EB79+YV9ZTAabt1b7o
+e5aU1RW6tlG8nzHHwK2FeyI=
+-----END PRIVATE KEY-----""",
+            "client_email": "cc-365@citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "client_id": "105264622264803277310",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/cc-365%40citric-hawk-457513-i6.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        
+        # Authenticate with the service account
+        credentials = ee.ServiceAccountCredentials(
+            service_account_info['client_email'],
+            key_data=json.dumps(service_account_info)
+        )
+        
+        # Initialize Earth Engine
+        ee.Initialize(credentials, project='citric-hawk-457513-i6')
+        
+        return True
+    except Exception as e:
+        st.error(f"Earth Engine auto-initialization failed: {str(e)}")
+        return False
+
+# Try to auto-initialize Earth Engine on app start
+if 'ee_auto_initialized' not in st.session_state:
+    with st.spinner("Initializing Earth Engine..."):
+        if auto_initialize_earth_engine():
+            st.session_state.ee_auto_initialized = True
+            st.session_state.ee_initialized = True
+        else:
+            st.session_state.ee_auto_initialized = False
+            st.session_state.ee_initialized = False
 
 # Page configuration
 st.set_page_config(
@@ -86,8 +155,10 @@ st.sidebar.markdown("""
 
 st.sidebar.markdown("### 🔐 **AUTHENTICATION**")
 
-# Google Earth Engine Authentication
-if not st.session_state.ee_initialized:
+# Check if Earth Engine is already auto-initialized
+if st.session_state.ee_initialized:
+    st.sidebar.success("✅ Earth Engine Connected (Auto-Authenticated)")
+else:
     st.sidebar.subheader("Upload GEE Credentials")
     st.sidebar.markdown("**Required:** Google Earth Engine service account JSON file")
     st.sidebar.markdown("""
@@ -117,7 +188,8 @@ if not st.session_state.ee_initialized:
                 json.dump(credentials_data, tmp_file)
                 credentials_path = tmp_file.name
             
-            # Initialize Earth Engine
+            # Import and use the original initialize_earth_engine function
+            from earth_engine_utils import initialize_earth_engine
             success = initialize_earth_engine(credentials_path)
             
             if success:
@@ -142,8 +214,15 @@ if not st.session_state.ee_initialized:
                 
         except Exception as e:
             st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
-else:
-    st.sidebar.success("✅ Earth Engine Connected")
+
+# Import the helper functions
+try:
+    from earth_engine_utils import get_admin_boundaries, get_boundary_names
+    from vegetation_indices import mask_clouds, add_vegetation_indices
+except ImportError as e:
+    st.error(f"Error importing helper modules: {str(e)}")
+    st.info("Please ensure earth_engine_utils.py and vegetation_indices.py are in the same directory")
+    st.stop()
 
 # Main application
 if st.session_state.ee_initialized:
@@ -757,7 +836,7 @@ if st.session_state.analysis_results:
 
 else:
     if not st.session_state.ee_initialized:
-        st.info("👆 Please upload your Google Earth Engine credentials to get started")
+        st.info("👆 Earth Engine is initializing... Please wait or upload credentials if needed")
     elif st.session_state.selected_geometry is None:
         st.info("👆 Please select a study area to proceed with analysis")
     else:
