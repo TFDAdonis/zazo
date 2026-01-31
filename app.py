@@ -1060,25 +1060,25 @@ with col2:
                 <div class="layer-control {'active' if show_vegetation else ''}" onclick="toggleLayer('vegetation')">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span>🌿 Vegetation</span>
-                        <span style="color: #00ff88;">{show_vegetation and 'ON' or 'OFF'}</span>
+                        <span style="color: #00ff88;">{'ON' if show_vegetation else 'OFF'}</span>
                     </div>
                 </div>
                 <div class="layer-control {'active' if show_temperature else ''}" onclick="toggleLayer('temperature')">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span>🌡️ Temperature</span>
-                        <span style="color: #00ff88;">{show_temperature and 'ON' or 'OFF'}</span>
+                        <span style="color: #00ff88;">{'ON' if show_temperature else 'OFF'}</span>
                     </div>
                 </div>
                 <div class="layer-control {'active' if show_population else ''}" onclick="toggleLayer('population')">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span>👥 Population</span>
-                        <span style="color: #00ff88;">{show_population and 'ON' or 'OFF'}</span>
+                        <span style="color: #00ff88;">{'ON' if show_population else 'OFF'}</span>
                     </div>
                 </div>
                 <div class="layer-control {'active' if show_elevation else ''}" onclick="toggleLayer('elevation')">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span>⛰️ Elevation</span>
-                        <span style="color: #00ff88;">{show_elevation and 'ON' or 'OFF'}</span>
+                        <span style="color: #00ff88;">{'ON' if show_elevation else 'OFF'}</span>
                     </div>
                 </div>
                 <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #222;">
@@ -1100,26 +1100,23 @@ with col2:
             # Display Earth controls
             st.markdown(earth_controls_html, unsafe_allow_html=True)
             
-            # Add JavaScript for interactive controls
-            st.markdown("""
-            <script>
-            function toggleLayer(layer) {
-                console.log('Toggling layer:', layer);
-                // This would trigger a Streamlit rerun in production
-            }
+            # Build status badges list
+            status_badges = []
+            if show_vegetation:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">🌿 Veg</span>')
+            if show_temperature:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">🌡️ Temp</span>')
+            if show_population:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">👥 Pop</span>')
+            if show_elevation:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">⛰️ Elev</span>')
+            if show_borders:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">🗺️ Borders</span>')
+            if show_night_lights:
+                status_badges.append('<span class="status-badge" style="font-size: 10px;">🌃 Night</span>')
             
-            // Update zoom level display
-            document.addEventListener('DOMContentLoaded', function() {
-                const map = document.querySelector('.folium-map');
-                if (map) {
-                    map.addEventListener('zoomend', function() {
-                        const zoomLevel = map._zoom;
-                        document.getElementById('zoom-level').textContent = zoomLevel;
-                    });
-                }
-            });
-            </script>
-            """, unsafe_allow_html=True)
+            # Join all status badges
+            status_badges_html = " ".join(status_badges)
             
             # Area info panel with Earth metrics
             st.markdown(f"""
@@ -1147,12 +1144,7 @@ with col2:
                         <div>
                             <div class="info-label">Active Layers</div>
                             <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px;">
-                                {show_vegetation and '<span class="status-badge" style="font-size: 10px;">🌿 Veg</span>' or ''}
-                                {show_temperature and '<span class="status-badge" style="font-size: 10px;">🌡️ Temp</span>' or ''}
-                                {show_population and '<span class="status-badge" style="font-size: 10px;">👥 Pop</span>' or ''}
-                                {show_elevation and '<span class="status-badge" style="font-size: 10px;">⛰️ Elev</span>' or ''}
-                                {show_borders and '<span class="status-badge" style="font-size: 10px;">🗺️ Borders</span>' or ''}
-                                {show_night_lights and '<span class="status-badge" style="font-size: 10px;">🌃 Night</span>' or ''}
+                                {status_badges_html}
                             </div>
                         </div>
                         <div>
@@ -1164,6 +1156,27 @@ with col2:
                     </div>
                 </div>
             </div>
+            """, unsafe_allow_html=True)
+            
+            # Add JavaScript for interactive controls
+            st.markdown("""
+            <script>
+            function toggleLayer(layer) {
+                console.log('Toggling layer:', layer);
+                // This would trigger a Streamlit rerun in production
+            }
+            
+            // Update zoom level display
+            document.addEventListener('DOMContentLoaded', function() {
+                const map = document.querySelector('.folium-map');
+                if (map) {
+                    map.addEventListener('zoomend', function() {
+                        const zoomLevel = map._zoom;
+                        document.getElementById('zoom-level').textContent = zoomLevel;
+                    });
+                }
+            });
+            </script>
             """, unsafe_allow_html=True)
             
         except Exception as e:
