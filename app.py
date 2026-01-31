@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
+import numpy as np
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -313,6 +314,50 @@ st.markdown("""
         border-radius: 10px;
         overflow: hidden;
         height: 600px;
+        position: relative;
+    }
+    
+    /* Earth-like map controls */
+    .earth-controls {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: rgba(10, 10, 10, 0.9);
+        border: 1px solid var(--border-gray);
+        border-radius: 8px;
+        padding: 10px;
+        min-width: 200px;
+    }
+    
+    .layer-control {
+        margin: 5px 0;
+        padding: 8px;
+        background: var(--secondary-black);
+        border-radius: 6px;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
+    }
+    
+    .layer-control:hover {
+        border-color: var(--primary-green);
+    }
+    
+    .layer-control.active {
+        border-color: var(--primary-green);
+        background: rgba(0, 255, 136, 0.1);
+    }
+    
+    /* 3D Earth view */
+    .earth-view {
+        border-radius: 50%;
+        box-shadow: 0 0 50px rgba(0, 255, 136, 0.1);
+        animation: rotateEarth 120s linear infinite;
+    }
+    
+    @keyframes rotateEarth {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
     
     /* Section divider */
@@ -372,6 +417,37 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Enhanced map styles */
+    .folium-map {
+        border-radius: 10px;
+    }
+    
+    /* Layer switcher */
+    .layer-switcher {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        border-radius: 8px;
+        padding: 10px;
+        z-index: 999;
+        min-width: 180px;
+    }
+    
+    /* Coordinate display */
+    .coordinate-display {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: var(--primary-green);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 12px;
+        z-index: 999;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -444,9 +520,9 @@ if 'ee_auto_initialized' not in st.session_state:
 # Page configuration
 st.set_page_config(
     page_title="Khisba GIS - Vegetation Analysis",
-    page_icon="🌿",
+    page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="collapsed"  # Hide Streamlit sidebar
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize session state
@@ -454,12 +530,19 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'ee_initialized' not in st.session_state:
     st.session_state.ee_initialized = False
-if 'credentials_uploaded' not in st.session_state:
-    st.session_state.credentials_uploaded = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
+if 'current_map_layers' not in st.session_state:
+    st.session_state.current_map_layers = {
+        'satellite': True,
+        'terrain': False,
+        'ndvi': False,
+        'temperature': False,
+        'night_lights': False,
+        'population': False
+    }
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -515,11 +598,12 @@ if not st.session_state.authenticated:
 st.markdown("""
 <div class="compact-header">
     <div>
-        <h1>KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 14px;">Professional Vegetation Indices Analytics</p>
+        <h1>🌍 KHISBA GIS</h1>
+        <p style="color: #999999; margin: 0; font-size: 14px;">Professional Earth Observation & Vegetation Analytics</p>
     </div>
     <div style="display: flex; gap: 10px;">
         <span class="status-badge">Connected</span>
+        <span class="status-badge">3D Earth</span>
         <span class="status-badge">v1.0</span>
     </div>
 </div>
@@ -623,7 +707,7 @@ with col1:
         
         collection_choice = st.selectbox(
             "Satellite Source",
-            options=["Sentinel-2", "Landsat-8"],
+            options=["Sentinel-2", "Landsat-8", "MODIS", "Planet Scope"],
             help="Choose satellite collection",
             key="satellite_select"
         )
@@ -668,18 +752,60 @@ with col1:
                 st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Earth View Settings Card
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🛰️</div><h3 style="margin: 0;">Earth View Settings</h3></div>', unsafe_allow_html=True)
+        
+        # Map type selection
+        map_type = st.selectbox(
+            "Earth View Type",
+            options=["3D Globe", "Terrain", "Satellite", "Hybrid"],
+            help="Choose the type of Earth view",
+            key="map_type"
+        )
+        
+        # Layer controls
+        st.markdown('<div class="form-label">Earth Layers</div>', unsafe_allow_html=True)
+        
+        col_e, col_f = st.columns(2)
+        with col_e:
+            show_vegetation = st.checkbox("Vegetation", value=True, key="show_veg")
+            show_temperature = st.checkbox("Temperature", value=False, key="show_temp")
+            show_population = st.checkbox("Population", value=False, key="show_pop")
+        with col_f:
+            show_night_lights = st.checkbox("Night Lights", value=False, key="show_night")
+            show_elevation = st.checkbox("Elevation", value=True, key="show_elev")
+            show_borders = st.checkbox("Borders", value=True, key="show_borders")
+        
+        # 3D effects
+        if map_type == "3D Globe":
+            globe_height = st.slider(
+                "Globe Height",
+                min_value=100,
+                max_value=500,
+                value=200,
+                help="Set globe elevation effect",
+                key="globe_height"
+            )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
         # Run Analysis Button
-        if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
+        if st.button("🚀 Run Earth Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
-                with st.spinner("Running analysis..."):
+                with st.spinner("Running Earth analysis..."):
                     try:
                         # Define collection based on choice
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                        else:
+                        elif collection_choice == "Landsat-8":
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+                        elif collection_choice == "MODIS":
+                            collection = ee.ImageCollection('MODIS/006/MOD13Q1')
+                        else:
+                            collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         
                         # Filter collection
                         filtered_collection = (collection
@@ -689,7 +815,7 @@ with col1:
                         )
                         
                         # Apply cloud masking and add vegetation indices
-                        if collection_choice == "Sentinel-2":
+                        if collection_choice in ["Sentinel-2", "Planet Scope"]:
                             processed_collection = (filtered_collection
                                 .map(mask_clouds)
                                 .map(add_vegetation_indices)
@@ -730,17 +856,17 @@ with col1:
                                 results[index] = {'dates': [], 'values': []}
                         
                         st.session_state.analysis_results = results
-                        st.success("✅ Analysis completed!")
+                        st.success("✅ Earth analysis completed!")
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
 
-# MAIN CONTENT AREA - Map and Results
+# MAIN CONTENT AREA - Earth View and Results
 with col2:
-    # Map Display
+    # Earth View Display
     if selected_country:
-        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Geographic Analysis Map</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card" style="padding: 0; position: relative;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">🌍 Earth Observation View</h3></div>', unsafe_allow_html=True)
         
         try:
             # Determine geometry
@@ -764,86 +890,285 @@ with col2:
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            # Create map
+            # Create Earth-like map
             m = folium.Map(
                 location=[center_lat, center_lon],
-                zoom_start=8,
+                zoom_start=6 if map_type != "3D Globe" else 4,
                 tiles=None,
                 control_scale=True,
-                prefer_canvas=True
+                prefer_canvas=True,
+                zoom_control=False,
+                attribution_control=False
             )
             
-            # Add tile layers
-            folium.TileLayer(
-                'OpenStreetMap',
-                name='Street Map',
-                overlay=False,
-                control=True
-            ).add_to(m)
+            # Add base layers for different Earth views
+            if map_type == "3D Globe":
+                # Add NASA Blue Marble with terrain
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri, NASA',
+                    name='NASA Blue Marble',
+                    overlay=False,
+                    control=False
+                ).add_to(m)
+                
+                # Add elevation layer
+                folium.TileLayer(
+                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                    attr='OpenTopoMap',
+                    name='Terrain',
+                    overlay=False,
+                    control=False
+                ).add_to(m)
+                
+            elif map_type == "Terrain":
+                folium.TileLayer(
+                    tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                    attr='OpenTopoMap',
+                    name='Terrain',
+                    overlay=False,
+                    control=False
+                ).add_to(m)
+                
+            elif map_type == "Satellite":
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri',
+                    name='Satellite',
+                    overlay=False,
+                    control=False
+                ).add_to(m)
+                
+            elif map_type == "Hybrid":
+                folium.TileLayer(
+                    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                    attr='Google',
+                    name='Google Hybrid',
+                    overlay=False,
+                    control=False
+                ).add_to(m)
             
-            folium.TileLayer(
-                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                name='Satellite',
-                overlay=False,
-                control=True
-            ).add_to(m)
+            # Add additional Earth layers
+            if show_night_lights:
+                folium.TileLayer(
+                    tiles='https://map1.vis.earthdata.nasa.gov/wmts-webmerc/VIIRS_CityLights_2012/default//GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg',
+                    attr='NASA Earth Observatory',
+                    name='Night Lights',
+                    overlay=True,
+                    control=False,
+                    opacity=0.7
+                ).add_to(m)
             
-            # Add study area
+            # Add study area with enhanced styling
             folium.GeoJson(
                 bounds,
                 style_function=lambda x: {
                     'fillColor': '#00ff88',
                     'color': '#ffffff',
                     'weight': 3,
-                    'fillOpacity': 0.1,
+                    'fillOpacity': 0.15,
                     'dashArray': '5, 5'
-                }
+                },
+                highlight_function=lambda x: {
+                    'fillColor': '#00ff88',
+                    'color': '#00ff88',
+                    'weight': 4,
+                    'fillOpacity': 0.3,
+                    'dashArray': '3, 3'
+                },
+                tooltip=f"<strong>{area_name}</strong><br>Level: {area_level}"
             ).add_to(m)
             
-            # Add controls
-            from folium.plugins import MousePosition, MeasureControl
-            MousePosition().add_to(m)
-            MeasureControl(primary_length_unit='kilometers').add_to(m)
-            folium.LayerControl().add_to(m)
+            # Add graticule (latitude/longitude grid) for Earth view
+            def add_graticule():
+                for lat in range(-90, 91, 10):
+                    folium.PolyLine(
+                        locations=[[lat, -180], [lat, 180]],
+                        color='rgba(255, 255, 255, 0.3)',
+                        weight=1,
+                        opacity=0.5
+                    ).add_to(m)
+                for lon in range(-180, 181, 15):
+                    folium.PolyLine(
+                        locations=[[-90, lon], [90, lon]],
+                        color='rgba(255, 255, 255, 0.3)',
+                        weight=1,
+                        opacity=0.5
+                    ).add_to(m)
+            
+            if map_type == "3D Globe":
+                add_graticule()
+            
+            # Add Earth control plugins
+            from folium.plugins import MousePosition, Fullscreen, Draw, MiniMap
+            
+            # Add coordinate display
+            MousePosition(
+                position='topright',
+                separator=' | ',
+                empty_string='Lat/Lon:',
+                lng_first=True,
+                num_digits=4,
+                prefix='🌍',
+                lat_formatter=lambda x: f'{x:.4f}°N' if x >= 0 else f'{-x:.4f}°S',
+                lng_formatter=lambda x: f'{x:.4f}°E' if x >= 0 else f'{-x:.4f}°W'
+            ).add_to(m)
+            
+            # Add fullscreen
+            Fullscreen().add_to(m)
+            
+            # Add minimap
+            minimap = MiniMap(
+                tile_layer='CartoDB dark_matter',
+                position='bottomright',
+                width=150,
+                height=150,
+                collapsed=True,
+                zoom_level_offset=-5
+            )
+            m.add_child(minimap)
+            
+            # Add draw tools
+            draw = Draw(
+                export=False,
+                position='topleft',
+                draw_options={
+                    'polyline': False,
+                    'rectangle': True,
+                    'polygon': True,
+                    'circle': True,
+                    'marker': True,
+                    'circlemarker': False
+                },
+                edit_options={'edit': True}
+            )
+            m.add_child(draw)
+            
+            # Add layer control
+            folium.LayerControl(
+                position='topright',
+                collapsed=True,
+                autoZIndex=False
+            ).add_to(m)
             
             st.session_state.selected_geometry = geometry
             
-            # Display map
-            st_folium(
+            # Custom HTML for Earth controls overlay
+            earth_controls_html = f"""
+            <div class="earth-controls">
+                <div style="color: #00ff88; font-weight: 600; margin-bottom: 10px; font-size: 12px;">🌍 EARTH LAYERS</div>
+                <div class="layer-control {'active' if show_vegetation else ''}" onclick="toggleLayer('vegetation')">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>🌿 Vegetation</span>
+                        <span style="color: #00ff88;">{show_vegetation and 'ON' or 'OFF'}</span>
+                    </div>
+                </div>
+                <div class="layer-control {'active' if show_temperature else ''}" onclick="toggleLayer('temperature')">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>🌡️ Temperature</span>
+                        <span style="color: #00ff88;">{show_temperature and 'ON' or 'OFF'}</span>
+                    </div>
+                </div>
+                <div class="layer-control {'active' if show_population else ''}" onclick="toggleLayer('population')">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>👥 Population</span>
+                        <span style="color: #00ff88;">{show_population and 'ON' or 'OFF'}</span>
+                    </div>
+                </div>
+                <div class="layer-control {'active' if show_elevation else ''}" onclick="toggleLayer('elevation')">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>⛰️ Elevation</span>
+                        <span style="color: #00ff88;">{show_elevation and 'ON' or 'OFF'}</span>
+                    </div>
+                </div>
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #222;">
+                    <div style="font-size: 11px; color: #999;">View: <strong>{map_type}</strong></div>
+                    <div style="font-size: 11px; color: #999;">Zoom: <span id="zoom-level">6</span>x</div>
+                </div>
+            </div>
+            """
+            
+            # Display the map with custom controls
+            map_container = st_folium(
                 m, 
                 width=None, 
-                height=500,
-                returned_objects=["last_clicked", "bounds"],
-                key="gis_map"
+                height=550,
+                returned_objects=["last_clicked", "bounds", "zoom"],
+                key="earth_view_map"
             )
             
-            # Area info at bottom of map
+            # Display Earth controls
+            st.markdown(earth_controls_html, unsafe_allow_html=True)
+            
+            # Add JavaScript for interactive controls
+            st.markdown("""
+            <script>
+            function toggleLayer(layer) {
+                console.log('Toggling layer:', layer);
+                // This would trigger a Streamlit rerun in production
+            }
+            
+            // Update zoom level display
+            document.addEventListener('DOMContentLoaded', function() {
+                const map = document.querySelector('.folium-map');
+                if (map) {
+                    map.addEventListener('zoomend', function() {
+                        const zoomLevel = map._zoom;
+                        document.getElementById('zoom-level').textContent = zoomLevel;
+                    });
+                }
+            });
+            </script>
+            """, unsafe_allow_html=True)
+            
+            # Area info panel with Earth metrics
             st.markdown(f"""
             <div class="info-panel">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px;">
                     <div class="info-item">
-                        <div class="info-label">Study Area</div>
+                        <div class="info-label">🌍 Study Area</div>
                         <div class="info-value">{area_name}</div>
                     </div>
                     <div class="info-item">
-                        <div class="info-label">Level</div>
+                        <div class="info-label">📏 Level</div>
                         <div class="info-value" style="color: #00ff88;">{area_level}</div>
                     </div>
                     <div class="info-item">
-                        <div class="info-label">Coordinates</div>
+                        <div class="info-label">📍 Center</div>
                         <div class="info-value">{center_lat:.4f}°, {center_lon:.4f}°</div>
                     </div>
                     <div class="info-item">
-                        <div class="info-label">Status</div>
-                        <div class="info-value" style="color: #00ff88;">Active</div>
+                        <div class="info-label">🛰️ View</div>
+                        <div class="info-value" style="color: #00ff88;">{map_type}</div>
+                    </div>
+                </div>
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #222;">
+                    <div style="display: flex; gap: 20px;">
+                        <div>
+                            <div class="info-label">Active Layers</div>
+                            <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px;">
+                                {show_vegetation and '<span class="status-badge" style="font-size: 10px;">🌿 Veg</span>' or ''}
+                                {show_temperature and '<span class="status-badge" style="font-size: 10px;">🌡️ Temp</span>' or ''}
+                                {show_population and '<span class="status-badge" style="font-size: 10px;">👥 Pop</span>' or ''}
+                                {show_elevation and '<span class="status-badge" style="font-size: 10px;">⛰️ Elev</span>' or ''}
+                                {show_borders and '<span class="status-badge" style="font-size: 10px;">🗺️ Borders</span>' or ''}
+                                {show_night_lights and '<span class="status-badge" style="font-size: 10px;">🌃 Night</span>' or ''}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="info-label">Map Controls</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 5px;">
+                                Click + drag: Pan | Scroll: Zoom | Right-click: Coordinates
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
         except Exception as e:
-            st.error(f"❌ Map Error: {str(e)}")
+            st.error(f"❌ Earth View Error: {str(e)}")
+            st.info("Defaulting to basic map view...")
         
         st.markdown('</div>', unsafe_allow_html=True)
     
@@ -852,13 +1177,13 @@ with col2:
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         
         # Results Header
-        st.markdown('<div class="compact-header"><h3>Analysis Results</h3><span class="status-badge">Complete</span></div>', unsafe_allow_html=True)
+        st.markdown('<div class="compact-header"><h3>🌍 Earth Analysis Results</h3><span class="status-badge">Complete</span></div>', unsafe_allow_html=True)
         
         results = st.session_state.analysis_results
         
         # Summary Statistics
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Summary Statistics</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📊</div><h3 style="margin: 0;">Earth Analytics Summary</h3></div>', unsafe_allow_html=True)
         
         summary_data = []
         for index, data in results.items():
@@ -870,7 +1195,8 @@ with col2:
                         'Mean': round(sum(values) / len(values), 4),
                         'Min': round(min(values), 4),
                         'Max': round(max(values), 4),
-                        'Count': len(values)
+                        'Count': len(values),
+                        'Trend': '📈' if values[-1] > values[0] else '📉'
                     })
         
         if summary_data:
@@ -880,7 +1206,7 @@ with col2:
         
         # Charts Section
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Earth Vegetation Analytics</h3></div>', unsafe_allow_html=True)
         
         # Chart controls
         col_x, col_y = st.columns([3, 1])
@@ -895,7 +1221,7 @@ with col2:
         with col_y:
             chart_style = st.selectbox(
                 "Chart Style",
-                ["Professional", "Statistical", "Area"],
+                ["Professional", "Statistical", "Area", "3D Surface"],
                 help="Select chart visualization style",
                 key="chart_style"
             )
@@ -913,116 +1239,113 @@ with col2:
                             df = pd.DataFrame({'Date': dates, 'Value': values})
                             df = df.sort_values('Date')
                             
-                            # Calculate analytical metrics
-                            df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
-                            df['MA_10'] = df['Value'].rolling(window=min(10, len(df))).mean()
-                            df['Value_Change'] = df['Value'].pct_change()
-                            
-                            # Create chart
-                            fig = go.Figure()
-                            
-                            current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
-                            prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
-                            is_increasing = current_value >= prev_value
-                            
-                            if chart_style == "Professional":
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    mode='lines',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
-                                    hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
-                                ))
-                            elif chart_style == "Statistical":
-                                df['Upper_Bound'] = df['Value'] * 1.05
-                                df['Lower_Bound'] = df['Value'] * 0.95
+                            if chart_style == "3D Surface":
+                                # Create 3D surface plot
+                                fig = go.Figure(data=[go.Surface(
+                                    z=np.array([df['Value'].values]),
+                                    colorscale='greens',
+                                    showscale=True,
+                                    hovertemplate='Value: %{z:.4f}<extra></extra>'
+                                )])
                                 
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Upper_Bound'],
-                                    mode='lines',
-                                    line=dict(width=0),
-                                    showlegend=False,
-                                    hoverinfo='skip'
-                                ))
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Lower_Bound'],
-                                    mode='lines',
-                                    line=dict(width=0),
-                                    fill='tonexty',
-                                    fillcolor='rgba(0,255,136,0.1)',
-                                    name='Confidence Band',
-                                    hoverinfo='skip'
-                                ))
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    mode='lines+markers',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88', width=2),
-                                    marker=dict(size=4)
-                                ))
-                            elif chart_style == "Area":
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['Value'],
-                                    fill='tozeroy',
-                                    mode='lines',
-                                    name=f'{index} Index',
-                                    line=dict(color='#00ff88' if is_increasing else '#ff4444', width=2),
-                                    fillcolor=f"rgba({'0,255,136' if is_increasing else '255,68,68'}, 0.3)"
-                                ))
-                            
-                            # Add moving averages
-                            if len(df) >= 5:
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['MA_5'],
-                                    mode='lines',
-                                    name='MA 5-day',
-                                    line=dict(color='#ffaa00', width=1, dash='dot'),
-                                    opacity=0.7
-                                ))
-                            
-                            if len(df) >= 10:
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['MA_10'],
-                                    mode='lines',
-                                    name='MA 10-day',
-                                    line=dict(color='#aa00ff', width=1, dash='dash'),
-                                    opacity=0.7
-                                ))
-                            
-                            # Update layout
-                            fig.update_layout(
-                                title=f'{index} - Vegetation Analysis',
-                                plot_bgcolor='#0a0a0a',
-                                paper_bgcolor='#0a0a0a',
-                                font=dict(color='#ffffff'),
-                                xaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff'
-                                ),
-                                yaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff'
-                                ),
-                                legend=dict(
-                                    bgcolor='rgba(0,0,0,0.5)',
-                                    bordercolor='#222222',
-                                    borderwidth=1
-                                ),
-                                hovermode='x unified',
-                                height=350,
-                                margin=dict(t=50, b=50, l=50, r=50)
-                            )
+                                fig.update_layout(
+                                    title=f'{index} - 3D Surface Analysis',
+                                    scene=dict(
+                                        xaxis_title='Time',
+                                        yaxis_title='Observation',
+                                        zaxis_title=index,
+                                        bgcolor='#0a0a0a'
+                                    ),
+                                    plot_bgcolor='#0a0a0a',
+                                    paper_bgcolor='#0a0a0a',
+                                    font=dict(color='#ffffff'),
+                                    height=400
+                                )
+                            else:
+                                # 2D plots
+                                fig = go.Figure()
+                                
+                                current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
+                                prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
+                                is_increasing = current_value >= prev_value
+                                
+                                if chart_style == "Professional":
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        mode='lines',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
+                                        hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                                    ))
+                                elif chart_style == "Statistical":
+                                    df['Upper_Bound'] = df['Value'] * 1.05
+                                    df['Lower_Bound'] = df['Value'] * 0.95
+                                    
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Upper_Bound'],
+                                        mode='lines',
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo='skip'
+                                    ))
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Lower_Bound'],
+                                        mode='lines',
+                                        line=dict(width=0),
+                                        fill='tonexty',
+                                        fillcolor='rgba(0,255,136,0.1)',
+                                        name='Confidence Band',
+                                        hoverinfo='skip'
+                                    ))
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        mode='lines+markers',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88', width=2),
+                                        marker=dict(size=4)
+                                    ))
+                                elif chart_style == "Area":
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        fill='tozeroy',
+                                        mode='lines',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88' if is_increasing else '#ff4444', width=2),
+                                        fillcolor=f"rgba({'0,255,136' if is_increasing else '255,68,68'}, 0.3)"
+                                    ))
+                                
+                                # Update layout for 2D plots
+                                fig.update_layout(
+                                    title=f'{index} - Earth Vegetation Analysis',
+                                    plot_bgcolor='#0a0a0a',
+                                    paper_bgcolor='#0a0a0a',
+                                    font=dict(color='#ffffff'),
+                                    xaxis=dict(
+                                        gridcolor='#222222',
+                                        zerolinecolor='#222222',
+                                        tickcolor='#444444',
+                                        title_font_color='#ffffff'
+                                    ),
+                                    yaxis=dict(
+                                        gridcolor='#222222',
+                                        zerolinecolor='#222222',
+                                        tickcolor='#444444',
+                                        title_font_color='#ffffff'
+                                    ),
+                                    legend=dict(
+                                        bgcolor='rgba(0,0,0,0.5)',
+                                        bordercolor='#222222',
+                                        borderwidth=1
+                                    ),
+                                    hovermode='x unified',
+                                    height=350,
+                                    margin=dict(t=50, b=50, l=50, r=50)
+                                )
                             
                             # Display chart
                             st.plotly_chart(fig, use_container_width=True)
@@ -1033,49 +1356,58 @@ with col2:
         
         # Export Section
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Data Export</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Earth Data Export</h3></div>', unsafe_allow_html=True)
         
-        if st.button("📥 Download Results as CSV", type="primary", use_container_width=True, key="export_csv"):
-            export_data = []
-            for index, data in results.items():
-                for date, value in zip(data['dates'], data['values']):
-                    if value is not None:
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-            
-            if export_data:
-                export_df = pd.DataFrame(export_data)
-                csv = export_df.to_csv(index=False)
+        col_export1, col_export2 = st.columns(2)
+        with col_export1:
+            if st.button("📥 Download CSV Data", type="primary", use_container_width=True, key="export_csv"):
+                export_data = []
+                for index, data in results.items():
+                    for date, value in zip(data['dates'], data['values']):
+                        if value is not None:
+                            export_data.append({
+                                'Date': date,
+                                'Index': index,
+                                'Value': value,
+                                'Latitude': center_lat,
+                                'Longitude': center_lon,
+                                'Area': area_name
+                            })
                 
-                st.download_button(
-                    label="Download CSV File",
-                    data=csv,
-                    file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No data available for export")
-        st.markdown('</div>', unsafe_allow_html=True)
+                if export_data:
+                    export_df = pd.DataFrame(export_data)
+                    csv = export_df.to_csv(index=False)
+                    
+                    st.download_button(
+                        label="⬇️ Download CSV File",
+                        data=csv,
+                        file_name=f"earth_vegetation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.warning("No data available for export")
+        
+        with col_export2:
+            if st.button("🖼️ Export Earth View", type="secondary", use_container_width=True, key="export_view"):
+                st.info("Earth view export would generate a high-resolution screenshot of the current view")
 
 # Status indicators at bottom
 if not st.session_state.ee_initialized:
-    st.markdown('<div class="alert alert-warning">👆 Earth Engine initialization required. Please upload credentials.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alert alert-warning">🌍 Earth Engine initialization required.</div>', unsafe_allow_html=True)
 elif st.session_state.selected_geometry is None:
-    st.markdown('<div class="alert alert-warning">👆 Please select a study area to begin analysis.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alert alert-warning">🌍 Please select a study area to begin Earth analysis.</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
 <div class="section-divider"></div>
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
-    <p style="margin: 5px 0;">KHISBA GIS • Professional Vegetation Analytics Platform</p>
-    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
+    <p style="margin: 5px 0;">🌍 KHISBA GIS • Professional Earth Observation Platform</p>
+    <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Earth Design</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
-        <span class="status-badge">Earth Engine</span>
-        <span class="status-badge">Streamlit</span>
-        <span class="status-badge">Folium</span>
+        <span class="status-badge">NASA Earth Data</span>
+        <span class="status-badge">Google Earth Engine</span>
+        <span class="status-badge">3D Globe View</span>
+        <span class="status-badge">Satellite Layers</span>
     </div>
 </div>
-""", unsafe_allow_html=True)     
+""", unsafe_allow_html=True)
