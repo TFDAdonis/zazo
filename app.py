@@ -1,15 +1,4 @@
-from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
-
-# Allow ALL origins for testing
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
 import streamlit as st
 import json
 import tempfile
