@@ -840,4 +840,4 @@ else:
     elif st.session_state.selected_geometry is None:
         st.info("👆 Please select a study area to proceed with analysis")
     else:
-        st.info("👆 Configure your analysis parameters and click 'Run Analysis'")  make this streamlit app with typscript style so it look like a mobile app
+        st.info("👆 Configure your analysis parameters and click 'Run Analysis'")
