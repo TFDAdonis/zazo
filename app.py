@@ -5,15 +5,10 @@ import os
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime
 import ee
 import traceback
-import geemap
-import leafmap
 
 # Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
@@ -104,8 +99,6 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-if 'map_mode' not in st.session_state:
-    st.session_state.map_mode = "geemap"  # Default to geemap view
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -219,31 +212,109 @@ else:
         except Exception as e:
             st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
 
-# Map Mode Selection
-st.sidebar.markdown("### 🌍 **MAP VIEW MODE**")
-map_mode = st.sidebar.radio(
-    "Choose map display:",
-    ["🛰️ Geemap Satellite View", "🗺️ 2D Map View", "🌐 3D Globe View"],
-    index=0 if st.session_state.map_mode == "geemap" else (1 if st.session_state.map_mode == "2d" else 2),
-    help="Switch between different map views"
-)
+# Simplified helper functions (since we can't import your modules)
+def get_admin_boundaries(level, country_code=None, admin1_code=None):
+    """Get administrative boundaries from GAUL dataset"""
+    try:
+        # GAUL dataset paths
+        datasets = {
+            0: 'FAO/GAUL/2015/level0',
+            1: 'FAO/GAUL/2015/level1',
+            2: 'FAO/GAUL/2015/level2'
+        }
+        
+        if level not in datasets:
+            return None
+            
+        fc = ee.FeatureCollection(datasets[level])
+        
+        # Apply filters based on level
+        if level == 1 and country_code:
+            fc = fc.filter(ee.Filter.eq('ADM0_CODE', country_code))
+        elif level == 2:
+            if admin1_code:
+                fc = fc.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
+            elif country_code:
+                fc = fc.filter(ee.Filter.eq('ADM0_CODE', country_code))
+                
+        return fc
+        
+    except Exception as e:
+        st.error(f"Error getting boundaries: {e}")
+        return None
 
-# Update session state
-if map_mode.startswith("🛰️"):
-    st.session_state.map_mode = "geemap"
-elif map_mode.startswith("🗺️"):
-    st.session_state.map_mode = "2d"
-else:
-    st.session_state.map_mode = "3d"
+def get_boundary_names(fc, level):
+    """Extract names from a feature collection"""
+    try:
+        # Different column names for different levels
+        name_columns = {
+            0: 'ADM0_NAME',
+            1: 'ADM1_NAME',
+            2: 'ADM2_NAME'
+        }
+        
+        name_column = name_columns.get(level, 'ADM0_NAME')
+        
+        # Get unique names
+        names_list = fc.aggregate_array(name_column).distinct().sort().getInfo()
+        
+        return names_list if names_list else []
+        
+    except Exception as e:
+        st.error(f"Error getting names: {e}")
+        return []
 
-# Import the helper functions
-try:
-    from earth_engine_utils import get_admin_boundaries, get_boundary_names
-    from vegetation_indices import mask_clouds, add_vegetation_indices
-except ImportError as e:
-    st.error(f"Error importing helper modules: {str(e)}")
-    st.info("Please ensure earth_engine_utils.py and vegetation_indices.py are in the same directory")
-    st.stop()
+def mask_clouds(image):
+    """Mask clouds for Sentinel-2 images"""
+    try:
+        # QA60 bitmask for clouds
+        qa = image.select('QA60')
+        cloud_bitmask = 1 << 10
+        cirrus_bitmask = 1 << 11
+        mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(qa.bitwiseAnd(cirrus_bitmask).eq(0))
+        return image.updateMask(mask)
+    except:
+        return image
+
+def add_vegetation_indices(image):
+    """Calculate vegetation indices for an image"""
+    try:
+        # For Sentinel-2
+        bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
+        
+        # Check if bands exist
+        available_bands = image.bandNames().getInfo()
+        has_required_bands = all(band in available_bands for band in bands[:4])
+        
+        if not has_required_bands:
+            # Try Landsat bands
+            bands = ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7']
+        
+        # Get bands
+        if 'B2' in available_bands:  # Sentinel-2
+            blue = image.select('B2').divide(10000)
+            green = image.select('B3').divide(10000)
+            red = image.select('B4').divide(10000)
+            nir = image.select('B8').divide(10000)
+            swir1 = image.select('B11').divide(10000)
+        elif 'SR_B2' in available_bands:  # Landsat
+            blue = image.select('SR_B2').multiply(0.0000275).add(-0.2)
+            green = image.select('SR_B3').multiply(0.0000275).add(-0.2)
+            red = image.select('SR_B4').multiply(0.0000275).add(-0.2)
+            nir = image.select('SR_B5').multiply(0.0000275).add(-0.2)
+            swir1 = image.select('SR_B6').multiply(0.0000275).add(-0.2)
+        else:
+            return image
+        
+        # Calculate basic indices
+        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+        evi = nir.subtract(red).divide(nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)).multiply(2.5).rename('EVI')
+        savi = nir.subtract(red).divide(nir.add(red).add(0.5)).multiply(1.5).rename('SAVI')
+        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+        
+        return image.addBands([ndvi, evi, savi, ndwi])
+    except Exception as e:
+        return image
 
 # Main application
 if st.session_state.ee_initialized:
@@ -324,14 +395,6 @@ if st.session_state.ee_initialized:
     if selected_country:
         st.markdown("### 🌍 **KHISBA GIS ANALYTICS WORKSPACE**")
         
-        # Map mode indicator
-        map_mode_display = "🛰️ GEEMAP SATELLITE VIEW" if st.session_state.map_mode == "geemap" else ("🗺️ 2D MAP VIEW" if st.session_state.map_mode == "2d" else "🌐 3D GLOBE VIEW")
-        st.markdown(f"""
-        <div style="text-align: center; background: linear-gradient(90deg, #1a1a2a, #2a1a3a); padding: 10px; border-radius: 5px; margin: 10px 0; border: 2px solid #00ff88;">
-            <strong style="color: #00ff88;">{map_mode_display}</strong> • <span style="color: #cccccc;">{"Satellite imagery with Earth Engine layers" if st.session_state.map_mode == "geemap" else "Traditional map view" if st.session_state.map_mode == "2d" else "Interactive 3D globe"}</span>
-        </div>
-        """, unsafe_allow_html=True)
-        
         try:
             # Determine which geometry to use
             if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
@@ -357,369 +420,96 @@ if st.session_state.ee_initialized:
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            if st.session_state.map_mode == "geemap":
-                # Create Geemap with Satellite basemap
+            # Create professional GIS map with satellite view
+            m = folium.Map(
+                location=[center_lat, center_lon],
+                zoom_start=6,
+                tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attr='Esri',
+                control_scale=True,
+                prefer_canvas=True
+            )
+            
+            # Add professional study area styling
+            folium.GeoJson(
+                bounds,
+                style_function=lambda x: {
+                    'fillColor': '#00ff88',
+                    'color': '#ffffff',
+                    'weight': 3,
+                    'fillOpacity': 0.2,
+                    'dashArray': '5, 5'
+                },
+                popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
+                tooltip=f"Click for details: {area_name}"
+            ).add_to(m)
+            
+            # Add coordinate display and measurement tools
+            from folium.plugins import MousePosition, MeasureControl
+            
+            MousePosition().add_to(m)
+            MeasureControl(primary_length_unit='kilometers').add_to(m)
+            
+            # Professional GIS info panel
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Display professional map with enhanced styling
                 st.markdown("""
-                <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
+                <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
                 """, unsafe_allow_html=True)
                 
-                # Create Geemap with satellite basemap
-                m = geemap.Map(
-                    center=[center_lat, center_lon],
-                    zoom=6,
-                    basemap='SATELLITE',
-                    plugin_Draw=True,
-                    Draw_export=True,
-                    locate_control=True,
-                    plugin_LatLngPopup=True
+                map_data = st_folium(
+                    m, 
+                    width=None, 
+                    height=500,
+                    returned_objects=["last_clicked", "bounds"],
+                    key="gis_map"
                 )
                 
-                # Add the selected geometry to the map
-                m.add_layer(geometry, {'color': '#00ff88', 'fillColor': '#00ff88', 'fillOpacity': 0.3}, area_name)
-                
-                # Add additional Earth Engine layers
-                try:
-                    # Add a recent Sentinel-2 image for context
-                    sentinel = ee.ImageCollection('COPERNICUS/S2_SR').filterBounds(geometry).filterDate('2023-06-01', '2023-06-30').median()
-                    
-                    # Add True Color visualization
-                    vis_params = {
-                        'min': 0,
-                        'max': 3000,
-                        'bands': ['B4', 'B3', 'B2']
-                    }
-                    m.add_layer(sentinel, vis_params, 'Sentinel-2 True Color (June 2023)')
-                    
-                    # Add NDVI layer
-                    ndvi = sentinel.normalizedDifference(['B8', 'B4']).rename('NDVI')
-                    ndvi_params = {
-                        'min': -0.2,
-                        'max': 0.8,
-                        'palette': ['blue', 'white', 'green']
-                    }
-                    m.add_layer(ndvi, ndvi_params, 'NDVI Vegetation Index')
-                    
-                except Exception as e:
-                    st.warning(f"Could not add satellite layers: {str(e)}")
-                
-                # Add layer control
-                m.add_layer_control()
-                
-                # Add fullscreen control
-                m.add_fullscreen_control()
-                
-                # Add scale bar
-                m.add_scale_bar()
-                
-                # Display the Geemap
-                m.to_streamlit(height=550)
-                
                 st.markdown("</div>", unsafe_allow_html=True)
-                
-                # Geemap controls info
-                st.markdown("""
-                <div style="background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #00ff88;">
-                    <h4 style="color: #00ff88; margin-top: 0;">🛰️ Geemap Features:</h4>
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px;">
-                        <div>
-                            <strong style="color: #ffffff;">🎮 Map Controls:</strong><br>
-                            <span style="color: #cccccc; font-size: 0.9em;">
-                            • <strong>Layers icon (top-right):</strong> Toggle satellite/NDVI layers<br>
-                            • <strong>Draw tools:</strong> Measure distances/areas<br>
-                            • <strong>Fullscreen:</strong> Expand map view<br>
-                            • <strong>Search:</strong> Find locations
-                            </span>
-                        </div>
-                        <div>
-                            <strong style="color: #ffffff;">📡 Satellite Layers:</strong><br>
-                            <span style="color: #cccccc; font-size: 0.9em;">
-                            • <strong>Sentinel-2:</strong> High-resolution imagery<br>
-                            • <strong>NDVI:</strong> Vegetation health index<br>
-                            • <strong>Study Area:</strong> Green highlighted boundary<br>
-                            • <strong>Base Layers:</strong> Multiple map styles
-                            </span>
-                        </div>
+            
+            with col2:
+                # Professional GIS information panel
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
+                    <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
+                    <hr style="border-color: #00ff88;">
+                    
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Study Area:</strong><br>
+                        <span style="color: #cccccc;">{area_name}</span>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Administrative Level:</strong><br>
+                        <span style="color: #00ff88;">{area_level}</span>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Coordinates:</strong><br>
+                        <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
+                        Lon: {center_lon:.4f}°</span>
+                    </div>
+                    
+                    <div style="margin: 15px 0;">
+                        <strong style="color: #ffffff;">Map Type:</strong><br>
+                        <span style="color: #00ff88;">🛰️ Satellite Imagery</span>
+                    </div>
+                    
+                    <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px;">
+                        <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
+                        <small style="color: #888888;">Powered by Earth Engine</small>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-            elif st.session_state.map_mode == "3d":
-                # Create 3D Interactive Globe using Plotly
-                st.markdown("""
-                <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
-                """, unsafe_allow_html=True)
-                
-                import numpy as np
-                # Create a simple 3D globe using Plotly
-                fig = go.Figure()
-                
-                # Add a sphere for the globe
-                u = np.linspace(0, 2 * np.pi, 100)
-                v = np.linspace(0, np.pi, 100)
-                x = np.outer(np.cos(u), np.sin(v))
-                y = np.outer(np.sin(u), np.sin(v))
-                z = np.outer(np.ones(np.size(u)), np.cos(v))
-                
-                fig.add_trace(go.Surface(
-                    x=x, y=y, z=z,
-                    colorscale='Blues',
-                    showscale=False,
-                    opacity=0.8,
-                    lighting=dict(ambient=0.7)
-                ))
-                
-                # Add marker for selected location
-                lat_rad = np.radians(center_lat)
-                lon_rad = np.radians(center_lon)
-                marker_x = np.cos(lat_rad) * np.cos(lon_rad)
-                marker_y = np.cos(lat_rad) * np.sin(lon_rad)
-                marker_z = np.sin(lat_rad)
-                
-                fig.add_trace(go.Scatter3d(
-                    x=[marker_x],
-                    y=[marker_y],
-                    z=[marker_z],
-                    mode='markers+text',
-                    marker=dict(
-                        size=8,
-                        color='#00ff88',
-                        symbol='circle'
-                    ),
-                    text=[area_name],
-                    textposition="top center",
-                    name="📍 Study Area"
-                ))
-                
-                fig.update_layout(
-                    title=dict(
-                        text=f"<b>3D Globe View - {area_name}</b>",
-                        x=0.5,
-                        font=dict(size=20, color='white')
-                    ),
-                    scene=dict(
-                        xaxis=dict(visible=False),
-                        yaxis=dict(visible=False),
-                        zaxis=dict(visible=False),
-                        aspectmode='data',
-                        camera=dict(
-                            eye=dict(x=1.5, y=1.5, z=1.5)
-                        ),
-                        bgcolor='#0a0a0a'
-                    ),
-                    paper_bgcolor='#0a0a0a',
-                    plot_bgcolor='#0a0a0a',
-                    font=dict(color='white'),
-                    height=500,
-                    showlegend=True
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-                
-            else:
-                # Create 2D professional GIS map (original code)
-                m = folium.Map(
-                    location=[center_lat, center_lon],
-                    zoom_start=6,
-                    tiles=None,
-                    control_scale=True,
-                    prefer_canvas=True
-                )
-                
-                # Add multiple professional base layers
-                folium.TileLayer(
-                    'OpenStreetMap',
-                    name='OpenStreetMap',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Satellite',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
-                    attr='Esri',
-                    name='Terrain',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                folium.TileLayer(
-                    'CartoDB dark_matter',
-                    name='Dark Theme',
-                    overlay=False,
-                    control=True
-                ).add_to(m)
-                
-                # Add professional study area styling
-                folium.GeoJson(
-                    bounds,
-                    style_function=lambda x: {
-                        'fillColor': '#00ff88',
-                        'color': '#ffffff',
-                        'weight': 3,
-                        'fillOpacity': 0.2,
-                        'dashArray': '5, 5'
-                    },
-                    popup=folium.Popup(f"<b>Study Area:</b><br>{area_name}<br><b>Level:</b> {area_level}", max_width=300),
-                    tooltip=f"Click for details: {area_name}"
-                ).add_to(m)
-                
-                # Add coordinate display and measurement tools
-                from folium.plugins import MousePosition, MeasureControl
-                
-                MousePosition().add_to(m)
-                MeasureControl(primary_length_unit='kilometers').add_to(m)
-                
-                # Add layer control
-                folium.LayerControl().add_to(m)
-                
-                # Professional GIS info panel
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    # Display professional map with enhanced styling
-                    st.markdown("""
-                    <div style="border: 3px solid #00ff88; border-radius: 10px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a1a);">
-                    """, unsafe_allow_html=True)
-                    
-                    map_data = st_folium(
-                        m, 
-                        width=None, 
-                        height=500,
-                        returned_objects=["last_clicked", "bounds", "zoom"],
-                        key="gis_map_2d"
-                    )
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-            
-            # Professional GIS information panel
-            if st.session_state.map_mode == "geemap":
-                col1, col2 = st.columns([1, 1])
-                with col2:
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15); margin-top: 20px;">
-                        <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🛰️ GEEMAP DATA PANEL</h4>
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">EARTH ENGINE INTEGRATED</span>
-                        </div>
-                        <hr style="border-color: #00ff88;">
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📌 Study Area:</strong><br>
-                            <span style="color: #cccccc;">{area_name}</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📊 Administrative Level:</strong><br>
-                            <span style="color: #00ff88;">{area_level}</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📍 Coordinates:</strong><br>
-                            <span style="color: #cccccc; font-family: monospace;">Lat: {center_lat:.4f}°<br>
-                            Lon: {center_lon:.4f}°</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📡 Available Layers:</strong><br>
-                            <span style="color: #00ff88; font-size: 0.9em;">
-                            • Sentinel-2 Satellite Imagery<br>
-                            • NDVI Vegetation Index<br>
-                            • Study Area Boundary<br>
-                            • Multiple Base Maps
-                            </span>
-                        </div>
-                        
-                        <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 20px; border-left: 3px solid #00ff88;">
-                            <small style="color: #00ff88; display: block; margin-bottom: 5px;">💡 Geemap Features:</small>
-                            <small style="color: #888888; font-size: 0.85em;">
-                            • <strong>Layer Control:</strong> Top-right corner<br>
-                            • <strong>Draw Tools:</strong> Measure distances/areas<br>
-                            • <strong>Fullscreen:</strong> Maximize view<br>
-                            • <strong>Search:</strong> Find any location
-                            </small>
-                        </div>
-                        
-                        <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px; text-align: center;">
-                            <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
-                            <small style="color: #888888;">Powered by Geemap & Earth Engine</small>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            elif st.session_state.map_mode == "3d":
-                col1, col2 = st.columns([1, 1])
-                with col2:
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15); margin-top: 20px;">
-                        <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🌐 3D GLOBE PANEL</h4>
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">INTERACTIVE 3D VIEW</span>
-                        </div>
-                        <hr style="border-color: #00ff88;">
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📌 Study Area:</strong><br>
-                            <span style="color: #cccccc;">{area_name}</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">📍 Coordinates:</strong><br>
-                            <span style="color: #cccccc; font-family: monospace;">Lat: {center_lat:.4f}°<br>
-                            Lon: {center_lon:.4f}°</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">🎮 Navigation:</strong><br>
-                            <span style="color: #00ff88;">Drag to rotate • Scroll to zoom</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-            else:
-                col1, col2 = st.columns([2, 1])
-                with col2:
-                    st.markdown(f"""
-                    <div style="background: linear-gradient(135deg, #1a1a1a, #2a2a2a); padding: 20px; border-radius: 10px; border: 1px solid #00ff88;">
-                        <h4 style="color: #00ff88; margin-top: 0;">🌍 GIS DATA PANEL</h4>
-                        <hr style="border-color: #00ff88;">
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">Study Area:</strong><br>
-                            <span style="color: #cccccc;">{area_name}</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">Administrative Level:</strong><br>
-                            <span style="color: #00ff88;">{area_level}</span>
-                        </div>
-                        
-                        <div style="margin: 15px 0;">
-                            <strong style="color: #ffffff;">Coordinates:</strong><br>
-                            <span style="color: #cccccc;">Lat: {center_lat:.4f}°<br>
-                            Lon: {center_lon:.4f}°</span>
-                        </div>
-                        
-                        <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px;">
-                            <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
-                            <small style="color: #888888;">Powered by Earth Engine</small>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
             
             st.session_state.selected_geometry = geometry
             
             # Professional status indicator
-            status_icon = "🛰️" if st.session_state.map_mode == "geemap" else ("🗺️" if st.session_state.map_mode == "2d" else "🌐")
             st.markdown(f"""
-            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 12px; border-radius: 8px; margin: 15px 0; border: 1px solid #ffffff;">
-                <strong style="color: white; font-size: 1.1em;">✅ GIS WORKSPACE ACTIVE</strong><br>
-                <span style="color: #e8f5e8; font-size: 0.9em;">{status_icon} {area_name} • {area_level} • {map_mode_display}</span>
+            <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <strong style="color: white;">✅ GIS WORKSPACE ACTIVE</strong> • Study Area: {area_name}
             </div>
             """, unsafe_allow_html=True)
             
