@@ -37,6 +37,7 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     .stDeployButton {display: none;}
+    .stToolbar {display: none;}
     
     /* Dark theme colors */
     :root {
@@ -50,6 +51,7 @@ st.markdown("""
         --green-accent: #2ea043;
         --button-bg: #238636;
         --button-hover: #2ea043;
+        --slider-track: #238636;
     }
     
     /* Main layout containers */
@@ -65,12 +67,14 @@ st.markdown("""
         border-right: 1px solid var(--border-color);
         padding: 20px;
         overflow-y: auto;
+        flex-shrink: 0;
     }
     
     .right-panel {
         flex: 1;
         padding: 20px;
         background: var(--bg-primary);
+        min-width: 0;
     }
     
     /* Typography - exact match */
@@ -133,6 +137,7 @@ st.markdown("""
         color: var(--text-primary);
         font-size: 14px;
         transition: border-color 0.2s;
+        box-sizing: border-box;
     }
     
     .form-input:focus {
@@ -141,17 +146,27 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(56, 139, 253, 0.15);
     }
     
-    /* Checkbox */
-    .checkbox-group {
+    /* Checkbox styling */
+    .checkbox-container {
         display: flex;
         align-items: center;
         margin: 16px 0;
+        cursor: pointer;
+    }
+    
+    .checkbox-input {
+        margin: 0;
+        margin-right: 8px;
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
     }
     
     .checkbox-label {
         color: var(--text-primary);
         font-size: 14px;
-        margin-left: 8px;
+        cursor: pointer;
+        user-select: none;
     }
     
     /* Button - exact match */
@@ -178,19 +193,24 @@ st.markdown("""
         background: var(--bg-tertiary);
         border: 1px solid var(--border-color);
         border-radius: 6px;
-        padding: 20px;
+        padding: 40px 20px;
         margin: 20px 0;
         min-height: 400px;
         position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     .map-placeholder {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
         text-align: center;
         color: var(--text-secondary);
+    }
+    
+    .map-placeholder-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.5;
     }
     
     /* Map controls */
@@ -198,6 +218,7 @@ st.markdown("""
         display: flex;
         gap: 8px;
         margin-top: 16px;
+        flex-wrap: wrap;
     }
     
     .control-button {
@@ -209,6 +230,7 @@ st.markdown("""
         font-size: 13px;
         cursor: pointer;
         transition: all 0.2s;
+        white-space: nowrap;
     }
     
     .control-button:hover {
@@ -226,7 +248,7 @@ st.markdown("""
         border-radius: 12px;
         color: var(--green-accent);
         font-size: 12px;
-        margin: 4px;
+        margin: 4px 4px 4px 0;
     }
     
     /* Divider */
@@ -243,6 +265,7 @@ st.markdown("""
         margin-top: 16px;
         font-size: 13px;
         color: var(--text-secondary);
+        flex-wrap: wrap;
     }
     
     /* Footer */
@@ -267,6 +290,11 @@ st.markdown("""
         font-weight: 500;
         cursor: pointer;
         text-decoration: none;
+        transition: background-color 0.2s;
+    }
+    
+    .footer-button:hover {
+        background: var(--button-hover);
     }
     
     .footer-note {
@@ -275,52 +303,92 @@ st.markdown("""
         margin-top: 8px;
     }
     
+    /* Custom select styling */
+    .custom-select-container {
+        position: relative;
+    }
+    
+    .custom-select-container::after {
+        content: "▼";
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-secondary);
+        font-size: 10px;
+        pointer-events: none;
+    }
+    
     /* Override Streamlit components */
     .stTextInput > div > div > input,
-    .stSelectbox > div > div > select {
+    .stSelectbox > div > div > select,
+    .stTextInput > div > div {
         background: var(--bg-primary) !important;
         border: 1px solid var(--border-color) !important;
         color: var(--text-primary) !important;
         border-radius: 6px !important;
         font-size: 14px !important;
         padding: 8px 12px !important;
+        box-sizing: border-box !important;
+        min-height: 38px !important;
+    }
+    
+    .stSelectbox > div > div > select {
+        appearance: none !important;
+        padding-right: 30px !important;
+    }
+    
+    /* Slider styling */
+    .stSlider > div > div {
+        padding: 8px 0 !important;
     }
     
     .stSlider > div > div > div {
-        background: var(--green-accent) !important;
+        background: var(--slider-track) !important;
+        height: 6px !important;
+        border-radius: 3px !important;
     }
     
     .stSlider > div > div > div > div {
         background: white !important;
         border: 2px solid var(--green-accent) !important;
+        width: 16px !important;
+        height: 16px !important;
     }
     
-    .stCheckbox > label {
+    .stSlider > div > div > div > div > div {
+        background: var(--green-accent) !important;
+    }
+    
+    /* Hide Streamlit labels and help text */
+    .stSelectbox > label,
+    .stSlider > label,
+    .stTextInput > label,
+    .stDateInput > label,
+    .stTextInput > div > p,
+    .stSelectbox > div > p {
+        display: none !important;
+    }
+    
+    /* Remove Streamlit spacing */
+    div[data-testid="stHorizontalBlock"] > div {
+        padding: 0 !important;
+    }
+    
+    /* Custom radio buttons */
+    .stRadio > div {
+        flex-direction: row !important;
+        gap: 16px !important;
+    }
+    
+    .stRadio > div > label {
         color: var(--text-primary) !important;
         font-size: 14px !important;
     }
     
-    /* Hide Streamlit labels */
-    .stSelectbox label,
-    .stSlider label,
-    .stDateInput label {
-        visibility: hidden;
-        height: 0;
-        margin: 0;
-        padding: 0;
-    }
-    
-    /* Custom select styling */
-    .custom-select {
-        position: relative;
-    }
-    
-    .custom-select select {
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 12px center;
-        padding-right: 36px !important;
+    /* Make sure columns work properly */
+    .stColumn {
+        padding: 0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -403,93 +471,130 @@ if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-
-# Auto-authenticate for this design
-st.session_state.authenticated = True
-
-if not st.session_state.authenticated:
-    st.stop()
+if 'run_analysis_checked' not in st.session_state:
+    st.session_state.run_analysis_checked = True
+if 'apply_mask_checked' not in st.session_state:
+    st.session_state.apply_mask_checked = True
 
 # Main App Layout
 st.markdown("""
 <div class="app-container">
     <div class="left-panel">
-        <h1>KHISBA GIS</h1>
-        <p class="subtitle">Vegetation Analytics</p>
-        <p class="text-muted">Pick an area, choose an index, then run.</p>
-        
-        <div class="divider"></div>
-        
-        <h2>Quick setup</h2>
-        
-        <div class="form-group">
-            <div class="form-label">Area name</div>
-            <div class="custom-select">
 """, unsafe_allow_html=True)
 
-# Area selection
-try:
-    from earth_engine_utils import get_admin_boundaries, get_boundary_names
-except:
-    pass
+# Left Panel Content
+st.markdown("<h1>KHISBA GIS</h1>", unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Vegetation Analytics</p>', unsafe_allow_html=True)
+st.markdown('<p class="text-muted">Pick an area, choose an index, then run.</p>', unsafe_allow_html=True)
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-# Show area name input
-area_name = st.text_input("", value="KHISBA_Test_AOL01", label_visibility="collapsed", key="area_name")
+st.markdown("<h2>Quick setup</h2>", unsafe_allow_html=True)
 
-st.markdown("""
-            </div>
-            <p class="text-muted" style="font-size: 13px; margin-top: 8px;">Use Draw/Upload in the map panel (placeholder).</p>
-        </div>
-        
-        <div class="form-group">
-            <div class="form-label">Vegetation index</div>
-            <div class="custom-select">
-""", unsafe_allow_html=True)
+# Area name input
+st.markdown('<div class="form-group">', unsafe_allow_html=True)
+st.markdown('<div class="form-label">Area name</div>', unsafe_allow_html=True)
+st.markdown('<div class="custom-select-container">', unsafe_allow_html=True)
+
+area_name = st.text_input(
+    "",
+    value="KHISBA_Test_AOL01",
+    label_visibility="collapsed",
+    key="area_name_input"
+)
+
+st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<p class="text-muted" style="font-size: 13px; margin-top: 8px;">Use Draw/Upload in the map panel (placeholder).</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Vegetation index selection
+st.markdown('<div class="form-group">', unsafe_allow_html=True)
+st.markdown('<div class="form-label">Vegetation index</div>', unsafe_allow_html=True)
+st.markdown('<div class="custom-select-container">', unsafe_allow_html=True)
+
 index_options = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'MSAVI', 'GNDVI', 'ARVI', 'VARI']
-selected_index = st.selectbox("", options=index_options, index=0, label_visibility="collapsed", key="veg_index")
+selected_index = st.selectbox(
+    "",
+    options=index_options,
+    index=0,
+    label_visibility="collapsed",
+    key="veg_index_select"
+)
 
-st.markdown(f"""
-            </div>
-            <p class="text-muted" style="font-size: 13px; margin-top: 8px;">{selected_index} - Vegetation vigor</p>
-        </div>
-        
-        <div class="checkbox-group">
-            <input type="checkbox" id="run_analysis" name="run_analysis" checked>
-            <label for="run_analysis" class="checkbox-label">Run analysis</label>
-        </div>
-        
-        <p class="text-muted" style="font-size: 13px;">Analysis is simulated for the mockup.</p>
-        
-        <div class="divider"></div>
-        
-        <h2>More options</h2>
-        
-        <div class="form-group">
-            <div class="form-label">Cloud max</div>
-""", unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
-# Cloud cover slider
-cloud_cover = st.slider("", 0, 100, 28, label_visibility="collapsed", key="cloud_slider")
+# Get index description
+index_descriptions = {
+    'NDVI': 'Normalized Difference Vegetation Index - Vegetation vigor',
+    'EVI': 'Enhanced Vegetation Index - Improved vegetation monitoring',
+    'SAVI': 'Soil Adjusted Vegetation Index - Accounts for soil brightness',
+    'NDWI': 'Normalized Difference Water Index - Water content detection',
+    'MSAVI': 'Modified Soil Adjusted Vegetation Index - Enhanced soil adjustment',
+    'GNDVI': 'Green Normalized Difference Vegetation Index - Chlorophyll content',
+    'ARVI': 'Atmospherically Resistant Vegetation Index - Reduces atmospheric effects',
+    'VARI': 'Visible Atmospherically Resistant Index - Visible spectrum vegetation'
+}
 
-st.markdown(f"""
-            <p class="text-muted" style="font-size: 13px; margin-top: 8px;">{cloud_cover}%</p>
-        </div>
-        
-        <div class="checkbox-group">
-            <input type="checkbox" id="apply_mask" name="apply_mask" checked>
-            <label for="apply_mask" class="checkbox-label">Apply mask</label>
-        </div>
-        
-        <p class="text-muted" style="font-size: 13px;">Reduce false positives.</p>
-        
-        <div class="divider"></div>
-        
-        <button class="primary-button" onclick="runAnalysis()">Run Analysis</button>
-        
+index_desc = index_descriptions.get(selected_index, 'Vegetation vigor')
+st.markdown(f'<p class="text-muted" style="font-size: 13px; margin-top: 8px;">{index_desc}</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Run analysis checkbox
+st.markdown('<div class="checkbox-container">', unsafe_allow_html=True)
+run_analysis = st.checkbox(
+    "Run analysis",
+    value=st.session_state.run_analysis_checked,
+    key="run_analysis_checkbox",
+    label_visibility="collapsed"
+)
+st.markdown('<label for="run_analysis_checkbox" class="checkbox-label">Run analysis</label>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<p class="text-muted" style="font-size: 13px;">Analysis is simulated for the mockup.</p>', unsafe_allow_html=True)
+
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+st.markdown("<h2>More options</h2>", unsafe_allow_html=True)
+
+# Cloud max slider
+st.markdown('<div class="form-group">', unsafe_allow_html=True)
+st.markdown('<div class="form-label">Cloud max</div>', unsafe_allow_html=True)
+
+cloud_cover = st.slider(
+    "",
+    0, 100, 28,
+    label_visibility="collapsed",
+    key="cloud_slider_input"
+)
+
+st.markdown(f'<p class="text-muted" style="font-size: 13px; margin-top: 8px;">{cloud_cover}%</p>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Apply mask checkbox
+st.markdown('<div class="checkbox-container">', unsafe_allow_html=True)
+apply_mask = st.checkbox(
+    "Apply mask",
+    value=st.session_state.apply_mask_checked,
+    key="apply_mask_checkbox",
+    label_visibility="collapsed"
+)
+st.markdown('<label for="apply_mask_checkbox" class="checkbox-label">Apply mask</label>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<p class="text-muted" style="font-size: 13px;">Reduce false positives.</p>', unsafe_allow_html=True)
+
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+
+# Run Analysis Button
+if st.button("Run Analysis", key="run_analysis_button"):
+    st.session_state.analysis_triggered = True
+    st.markdown("""
+    <script>
+    alert('Analysis started! This is a mockup demonstration.');
+    </script>
+    """, unsafe_allow_html=True)
+
+st.markdown("""
         <div class="footer">
-            <button class="footer-button">Activate VV Made With Replit</button>
+            <button class="footer-button" onclick="activateVV()">Activate VV Made With Replit</button>
             <p class="footer-note">Use the left panel, then run analytics vs.</p>
         </div>
     </div>
@@ -500,104 +605,178 @@ st.markdown(f"""
         
         <div class="map-container">
             <div class="map-placeholder">
-                <div style="font-size: 48px; margin-bottom: 16px;">🗺️</div>
+                <div class="map-placeholder-icon">🗺️</div>
                 <h3 style="margin-bottom: 8px;">Interactive Map Area</h3>
                 <p style="max-width: 300px; margin: 0 auto;">Click "Draw" to define your analysis area or upload a GeoJSON file</p>
             </div>
         </div>
         
         <div class="map-info">
-            <span class="status-tag">NDVI</span>
-            <span class="status-tag">cloud ≤ {cloud_cover}%</span>
-            <span class="status-tag">mask: on</span>
-            <span class="status-tag">smooth: on</span>
+""", unsafe_allow_html=True)
+
+# Status tags
+st.markdown(f'<span class="status-tag">{selected_index}</span>', unsafe_allow_html=True)
+st.markdown(f'<span class="status-tag">cloud ≤ {cloud_cover}%</span>', unsafe_allow_html=True)
+st.markdown('<span class="status-tag">mask: on</span>', unsafe_allow_html=True)
+st.markdown('<span class="status-tag">smooth: on</span>', unsafe_allow_html=True)
+
+st.markdown("""
         </div>
         
         <div class="divider"></div>
         
         <h3>Basemap</h3>
         <div class="map-controls">
-            <button class="control-button">Basemap</button>
-            <button class="control-button">Layers</button>
-            <button class="control-button">Draw</button>
-            <button class="control-button">Upload</button>
-            <button class="control-button">Center</button>
+            <button class="control-button" onclick="showBasemap()">Basemap</button>
+            <button class="control-button" onclick="showLayers()">Layers</button>
+            <button class="control-button" onclick="startDrawing()">Draw</button>
+            <button class="control-button" onclick="uploadFile()">Upload</button>
+            <button class="control-button" onclick="centerMap()">Center</button>
         </div>
     </div>
 </div>
 
 <script>
-function runAnalysis() {
-    alert("Analysis started! This is a mockup demonstration.");
+function activateVV() {
+    alert('Activating VV Made With Replit feature...');
+}
+
+function showBasemap() {
+    alert('Basemap options would appear here.');
+}
+
+function showLayers() {
+    alert('Layer management panel would open.');
+}
+
+function startDrawing() {
+    alert('Draw mode activated. Click on the map to start drawing your area.');
+}
+
+function uploadFile() {
+    alert('File upload dialog would open here. Supported formats: GeoJSON, KML, Shapefile.');
+}
+
+function centerMap() {
+    alert('Map centered to selected area.');
 }
 </script>
 """, unsafe_allow_html=True)
 
-# Add JavaScript for interactive elements
+# Add JavaScript for better interactivity
 st.markdown("""
 <script>
-// Add interactivity to checkboxes
-document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-    checkbox.addEventListener('change', function() {
-        console.log(this.id + ' changed to ' + this.checked);
-    });
-});
-
-// Add interactivity to control buttons
-document.querySelectorAll('.control-button').forEach(button => {
-    button.addEventListener('click', function() {
-        const action = this.textContent;
-        if (action === 'Draw') {
-            alert('Draw mode activated. Click on the map to start drawing.');
-        } else if (action === 'Upload') {
-            alert('Upload dialog would open here.');
-        } else if (action === 'Center') {
-            alert('Map centered to selected area.');
-        } else {
-            alert(action + ' options would appear here.');
+// Update session state when checkboxes change
+document.addEventListener('DOMContentLoaded', function() {
+    // Add change listeners to checkboxes
+    const runAnalysisCheckbox = document.querySelector('input[data-testid="stCheckbox"][aria-label="Run analysis"]');
+    const applyMaskCheckbox = document.querySelector('input[data-testid="stCheckbox"][aria-label="Apply mask"]');
+    
+    if (runAnalysisCheckbox) {
+        runAnalysisCheckbox.addEventListener('change', function() {
+            console.log('Run analysis:', this.checked);
+        });
+    }
+    
+    if (applyMaskCheckbox) {
+        applyMaskCheckbox.addEventListener('change', function() {
+            console.log('Apply mask:', this.checked);
+        });
+    }
+    
+    // Update status tags based on checkbox state
+    function updateStatusTags() {
+        const maskStatus = document.querySelector('.status-tag:nth-child(3)');
+        if (applyMaskCheckbox && !applyMaskCheckbox.checked) {
+            if (maskStatus) maskStatus.textContent = 'mask: off';
         }
-    });
-});
-
-// Add interactivity to footer button
-document.querySelector('.footer-button').addEventListener('click', function() {
-    alert('Activating VV Made With Replit feature...');
+    }
+    
+    // Initial update
+    updateStatusTags();
+    
+    // Update on checkbox change
+    if (applyMaskCheckbox) {
+        applyMaskCheckbox.addEventListener('change', updateStatusTags);
+    }
 });
 </script>
 """, unsafe_allow_html=True)
 
-# Hidden Streamlit functionality that runs in background
+# Initialize Earth Engine functionality in background
 if st.session_state.ee_initialized:
-    st.markdown("""
-    <script>
-    console.log('Earth Engine initialized successfully');
-    </script>
-    """, unsafe_allow_html=True)
+    try:
+        from earth_engine_utils import get_admin_boundaries, get_boundary_names
+        st.session_state.ee_ready = True
+    except:
+        st.session_state.ee_ready = False
 else:
-    st.markdown("""
-    <script>
-    console.log('Earth Engine not initialized - using mock data');
-    </script>
-    """, unsafe_allow_html=True)
+    st.session_state.ee_ready = False
 
-# Simulate analysis when Run Analysis is clicked
-if st.button(" ", key="hidden_run", help="Run analysis"):
+# Store session state values
+st.session_state.area_name = area_name
+st.session_state.selected_veg_index = selected_index
+st.session_state.cloud_max = cloud_cover
+st.session_state.run_analysis = run_analysis
+st.session_state.apply_mask = apply_mask
+
+# Handle analysis if triggered
+if 'analysis_triggered' in st.session_state and st.session_state.analysis_triggered:
+    # Generate mock analysis results
+    import random
+    dates = []
+    values = []
+    
+    # Generate 12 months of mock data
+    for i in range(12):
+        date = datetime(2024, 1, 1) + timedelta(days=30*i)
+        dates.append(date.strftime('%Y-%m-%d'))
+        # Simulate seasonal vegetation pattern
+        value = 0.3 + 0.3 * abs(math.sin(i * math.pi / 6)) + random.uniform(-0.05, 0.05)
+        values.append(round(value, 3))
+    
     st.session_state.analysis_results = {
-        'NDVI': {'dates': ['2024-01-01', '2024-02-01', '2024-03-01'], 'values': [0.45, 0.52, 0.48]},
-        'status': 'Analysis complete - mock data generated'
+        'index': selected_index,
+        'dates': dates,
+        'values': values,
+        'area': area_name,
+        'cloud_cover': cloud_cover,
+        'mask_applied': apply_mask
     }
     
-    st.markdown("""
+    # Reset trigger
+    st.session_state.analysis_triggered = False
+
+# Show analysis results if available
+if 'analysis_results' in st.session_state and st.session_state.analysis_results:
+    # Display results in a subtle way
+    results = st.session_state.analysis_results
+    st.markdown(f"""
+    <div style="position: fixed; bottom: 20px; right: 20px; background: var(--bg-secondary); 
+                border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; 
+                max-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000;">
+        <h4 style="margin: 0 0 8px 0; color: var(--text-primary);">Analysis Complete</h4>
+        <p style="margin: 4px 0; font-size: 13px; color: var(--text-secondary);">
+            <strong>Area:</strong> {results['area']}<br>
+            <strong>Index:</strong> {results['index']}<br>
+            <strong>Period:</strong> 12 months<br>
+            <strong>Avg Value:</strong> {sum(results['values']) / len(results['values']):.3f}
+        </p>
+        <button onclick="this.parentElement.style.display='none'" 
+                style="margin-top: 8px; padding: 4px 12px; background: var(--button-bg); 
+                       color: white; border: none; border-radius: 4px; font-size: 12px; 
+                       cursor: pointer;">
+            Dismiss
+        </button>
+    </div>
+    
     <script>
-    alert('Analysis complete! Results generated with mock data.');
+    // Auto-dismiss after 10 seconds
+    setTimeout(function() {{
+        const notice = document.querySelector('div[style*="position: fixed; bottom: 20px;"]');
+        if (notice) notice.style.display = 'none';
+    }}, 10000);
     </script>
     """, unsafe_allow_html=True)
 
-# Add some interactivity with session state
-if 'analysis_triggered' not in st.session_state:
-    st.session_state.analysis_triggered = False
-
-# Store the selected values
-st.session_state.selected_area = area_name
-st.session_state.selected_index = selected_index
-st.session_state.cloud_max = cloud_cover
+import math
