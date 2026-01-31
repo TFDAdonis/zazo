@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 import ee
 import traceback
 import numpy as np
-import requests
 
 # Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
@@ -24,7 +23,7 @@ def auto_initialize_earth_engine():
             "project_id": "citric-hawk-457513-i6",
             "private_key_id": "8984179a69969591194d8f8097e48cd9789f5ea2",
             "private_key": """-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
+MIIEvQIBADANBgkqhkiGw0BAQEFAASCBKcwggSjAgEAAoIBAQDFQOtXKWE+7mEY
 JUTNzx3h+QvvDCvZ2B6XZTofknuAFPW2LqAzZustznJJFkCmO3Nutct+W/iDQCG0
 1DjOQcbcr/jWr+mnRLVOkUkQc/kzZ8zaMQqU8HpXjS1mdhpsrbUaRKoEgfo3I3Bp
 dFcJ/caC7TSr8VkGnZcPEZyXVsj8dLSEzomdkX+mDlJlgCrNfu3Knu+If5lXh3Me
@@ -104,11 +103,9 @@ if 'selected_geometry' not in st.session_state:
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
 if 'map_mode' not in st.session_state:
-    st.session_state.map_mode = "3d"  # Default to 3D view
+    st.session_state.map_mode = "folium"  # Default to Folium view
 if 'current_zoom' not in st.session_state:
-    st.session_state.current_zoom = 3
-if 'map_style' not in st.session_state:
-    st.session_state.map_style = "satellite-streets"
+    st.session_state.current_zoom = 6
 
 # Authentication check
 if not st.session_state.authenticated:
@@ -222,48 +219,6 @@ else:
         except Exception as e:
             st.sidebar.error(f"❌ Error processing credentials: {str(e)}")
 
-# Map Controls in Sidebar
-st.sidebar.markdown("### 🗺️ **MAP CONTROLS**")
-
-# Map Style Selection
-map_styles = {
-    "satellite-streets": "🛰️ Satellite with Streets",
-    "satellite": "🛰️ Satellite Only",
-    "streets": "🗺️ Street Map",
-    "outdoors": "🏔️ Outdoors",
-    "light": "☀️ Light",
-    "dark": "🌙 Dark",
-    "open-street-map": "🌐 OpenStreetMap",
-    "carto-positron": "🗺️ Carto Light",
-    "carto-darkmatter": "🌑 Carto Dark",
-    "stamen-terrain": "🏞️ Stamen Terrain",
-    "stamen-toner": "⚫ Stamen Toner"
-}
-
-selected_style_name = st.sidebar.selectbox(
-    "Map Style:",
-    options=list(map_styles.keys()),
-    format_func=lambda x: map_styles[x],
-    index=list(map_styles.keys()).index(st.session_state.map_style)
-)
-
-st.session_state.map_style = selected_style_name
-
-# 3D Terrain Toggle
-show_3d = st.sidebar.checkbox(
-    "🌋 Enable 3D Terrain", 
-    value=True,
-    help="Show 3D elevation when zoomed in"
-)
-
-# Map Layer Toggles
-st.sidebar.markdown("### 🎨 **MAP LAYERS**")
-
-show_terrain = st.sidebar.checkbox("🏔️ Terrain", value=True)
-show_labels = st.sidebar.checkbox("🏷️ Labels", value=True)
-show_buildings = st.sidebar.checkbox("🏢 Buildings 3D", value=True)
-show_water = st.sidebar.checkbox("🌊 Water Bodies", value=True)
-
 # Import the helper functions
 try:
     from earth_engine_utils import get_admin_boundaries, get_boundary_names
@@ -355,7 +310,7 @@ if st.session_state.ee_initialized:
         # Map mode indicator
         st.markdown(f"""
         <div style="text-align: center; background: linear-gradient(90deg, #1a1a2a, #2a1a3a); padding: 10px; border-radius: 5px; margin: 10px 0; border: 2px solid #00ff88;">
-            <strong style="color: #00ff88;">🌐 3D/2D INTERACTIVE MAP</strong> • <span style="color: #cccccc;">Zoom out for globe view • Zoom in for detailed 3D terrain</span>
+            <strong style="color: #00ff88;">🌐 INTERACTIVE MAP VIEW</strong> • <span style="color: #cccccc;">Multiple layers • Click to interact • Drag to explore</span>
         </div>
         """, unsafe_allow_html=True)
         
@@ -384,156 +339,271 @@ if st.session_state.ee_initialized:
             center_lat = sum(lats) / len(lats)
             center_lon = sum(lons) / len(lons)
             
-            # Create 3D/2D Interactive Map with Plotly Mapbox
+            # Create professional GIS map with Folium (reliable and works without tokens)
             st.markdown("""
             <div style="border: 3px solid #00ff88; border-radius: 15px; padding: 5px; background: linear-gradient(45deg, #0a0a0a, #1a1a2a); box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2); margin-bottom: 20px;">
             """, unsafe_allow_html=True)
             
-            # Create interactive map with 3D terrain
-            fig = go.Figure()
-            
-            # Add study area boundary as a scatter trace
-            # Get boundary coordinates
-            if 'bounds' in locals():
-                # Create a polygon from bounds
-                lons_poly = [coord[0] for coord in coords]
-                lats_poly = [coord[1] for coord in coords]
-                
-                # Close the polygon
-                lons_poly.append(lons_poly[0])
-                lats_poly.append(lats_poly[0])
-                
-                # Add polygon as filled area
-                fig.add_trace(go.Scattermapbox(
-                    lat=lats_poly,
-                    lon=lons_poly,
-                    mode='lines',
-                    fill='toself',
-                    fillcolor='rgba(0, 255, 136, 0.3)',
-                    line=dict(color='#00ff88', width=3),
-                    name=f"Study Area: {area_name}",
-                    hoverinfo='text',
-                    hovertext=f"""
-                    <b>📍 Study Area:</b> {area_name}<br>
-                    <b>📊 Level:</b> {area_level}<br>
-                    <b>🌐 Coordinates:</b> {center_lat:.4f}°N, {center_lon:.4f}°E<br>
-                    <b>🔍 Status:</b> Active for analysis
-                    """
-                ))
-            
-            # Add center marker
-            fig.add_trace(go.Scattermapbox(
-                lat=[center_lat],
-                lon=[center_lon],
-                mode='markers+text',
-                marker=dict(
-                    size=15,
-                    color='#00ff88',
-                    symbol='circle',
-                    opacity=0.8
-                ),
-                text=["📍"],
-                textposition="top center",
-                textfont=dict(size=20, color='#00ff88'),
-                name="Center Point",
-                hoverinfo='text',
-                hovertext=f"Center: {center_lat:.4f}°N, {center_lon:.4f}°E"
-            ))
-            
-            # Configure map layout with 3D terrain
-            mapbox_config = dict(
-                style=st.session_state.map_style,
-                center=dict(lat=center_lat, lon=center_lon),
-                zoom=st.session_state.current_zoom,
-                bearing=0,
-                pitch=0  # Start with 0 pitch (flat)
+            # Create a beautiful interactive map with multiple layers
+            m = folium.Map(
+                location=[center_lat, center_lon],
+                zoom_start=st.session_state.current_zoom,
+                tiles=None,  # We'll add custom tiles
+                control_scale=True,
+                prefer_canvas=True,
+                max_bounds=True,
+                max_lat=85,
+                min_lat=-85
             )
             
-            # Add 3D terrain if enabled
-            if show_3d and st.session_state.current_zoom > 8:  # Show 3D when zoomed in
-                mapbox_config['pitch'] = 45  # Tilt the map for 3D effect
-                
-                # Add terrain layer
-                if show_terrain:
-                    mapbox_config['layers'] = [{
-                        'source': ["mapbox://mapbox.mapbox-terrain-dem-v1"],
-                        'type': "hillshade",
-                        'opacity': 0.5
-                    }]
+            # Add multiple professional base layers with fallback options
             
-            # Add building 3D layer if enabled
-            if show_buildings and st.session_state.current_zoom > 15:
-                mapbox_config.setdefault('layers', []).append({
-                    'id': 'add-3d-buildings',
-                    'source': 'composite',
-                    'source-layer': 'building',
-                    'filter': ['==', 'extrude', 'true'],
-                    'type': 'fill-extrusion',
-                    'minzoom': 15,
-                    'paint': {
-                        'fill-extrusion-color': '#aaa',
-                        'fill-extrusion-height': [
-                            'interpolate', ['linear'], ['zoom'],
-                            15, 0,
-                            15.05, ['get', 'height']
-                        ],
-                        'fill-extrusion-base': [
-                            'interpolate', ['linear'], ['zoom'],
-                            15, 0,
-                            15.05, ['get', 'min_height']
-                        ],
-                        'fill-extrusion-opacity': 0.6
-                    }
-                })
+            # 1. OpenStreetMap (always works, no token needed)
+            folium.TileLayer(
+                'OpenStreetMap',
+                name='🗺️ Street Map',
+                attr='OpenStreetMap contributors',
+                overlay=False,
+                control=True,
+                max_native_zoom=19
+            ).add_to(m)
             
-            # Update layout
-           fig.update_layout(
-                            title={
-                                'text': f'<b>{index}</b> - Vegetation Analysis',
-                                'x': 0.5,
-                                'xanchor': 'center',
-                                'font': {'size': 20, 'color': '#ffffff'}
-                            },
-                            plot_bgcolor='#0E1117',
-                            paper_bgcolor='#0E1117',
-                            font=dict(color='#ffffff'),
-                            xaxis=dict(
-                                gridcolor='#333333',
-                                zerolinecolor='#333333',
-                                tickcolor='#666666',
-                                title_font_color='#ffffff',
-                                title="Time Period"
-                            ),
-                            yaxis=dict(
-                                gridcolor='#333333',
-                                zerolinecolor='#333333',
-                                tickcolor='#666666',
-                                title=f'{index} Index Value',
-                                title_font_color='#ffffff'
-                            ),
-                            legend=dict(
-                                bgcolor='rgba(0,0,0,0.5)',
-                                bordercolor='#666666',
-                                borderwidth=1
-                            ),
-                            hovermode='x unified',
-                            height=400
-                        )
+            # 2. CartoDB Dark Matter (modern dark theme)
+            folium.TileLayer(
+                'CartoDB dark_matter',
+                name='🌑 Dark Theme',
+                attr='CartoDB',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # 3. CartoDB Positron (light theme)
+            folium.TileLayer(
+                'CartoDB positron',
+                name='☀️ Light Theme',
+                attr='CartoDB',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # 4. Stamen Terrain (beautiful terrain)
+            folium.TileLayer(
+                'Stamen Terrain',
+                name='🏔️ Terrain',
+                attr='Stamen',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # 5. Stamen Toner (black and white)
+            folium.TileLayer(
+                'Stamen Toner',
+                name='⚫ Toner',
+                attr='Stamen',
+                overlay=False,
+                control=True
+            ).add_to(m)
+            
+            # 6. Try to add satellite layers (some might work without tokens)
+            try:
+                # ESRI World Imagery (often works)
+                folium.TileLayer(
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    name='🛰️ Satellite',
+                    attr='Esri',
+                    overlay=False,
+                    control=True,
+                    max_native_zoom=19
+                ).add_to(m)
+            except:
+                pass
+            
+            try:
+                # ESRI World Terrain
+                folium.TileLayer(
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}',
+                    name='🗻 Terrain Base',
+                    attr='Esri',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+            except:
+                pass
+            
+            # Add study area with glowing effect
+            study_area_style = {
+                'fillColor': '#00ff88',
+                'color': '#ffffff',
+                'weight': 4,
+                'fillOpacity': 0.3,
+                'dashArray': '5, 5',
+                'opacity': 0.8
+            }
+            
+            # Create a feature group for the study area
+            study_area_fg = folium.FeatureGroup(name="📌 Study Area", overlay=True)
+            
+            # Add GeoJson with popup
+            folium.GeoJson(
+                bounds,
+                style_function=lambda x: study_area_style,
+                popup=folium.Popup(
+                    f"""
+                    <div style="font-family: Arial, sans-serif; padding: 10px;">
+                        <h3 style="color: #00ff88; margin-top: 0;">📌 STUDY AREA</h3>
+                        <hr style="border-color: #00ff88;">
+                        <p><strong>📍 Location:</strong> {area_name}</p>
+                        <p><strong>📊 Level:</strong> {area_level}</p>
+                        <p><strong>🌐 Coordinates:</strong><br>
+                        Lat: {center_lat:.4f}°<br>
+                        Lon: {center_lon:.4f}°</p>
+                        <p><strong>🔍 Status:</strong> Active for analysis</p>
+                        <div style="background: #1a1a1a; padding: 8px; border-radius: 5px; margin-top: 10px;">
+                            <small style="color: #00ff88;">KHISBA GIS Professional</small>
+                        </div>
+                    </div>
+                    """, 
+                    max_width=350
+                ),
+                tooltip=f"📍 {area_name} | Click for details"
+            ).add_to(study_area_fg)
+            
+            # Add a marker at the center
+            folium.CircleMarker(
+                location=[center_lat, center_lon],
+                radius=10,
+                popup=f"Center: {center_lat:.4f}, {center_lon:.4f}",
+                color='#00ff88',
+                fill=True,
+                fillColor='#00ff88',
+                fillOpacity=0.7,
+                weight=3
+            ).add_to(study_area_fg)
+            
+            # Add a circle to show area extent
+            folium.Circle(
+                location=[center_lat, center_lon],
+                radius=50000,  # 50km radius
+                color='#00ff88',
+                fill=True,
+                fillColor='#00ff88',
+                fillOpacity=0.1,
+                weight=2,
+                popup=f"Study Area Extent: {area_name}"
+            ).add_to(study_area_fg)
+            
+            study_area_fg.add_to(m)
+            
+            # Add professional plugins
+            from folium.plugins import MousePosition, MeasureControl, Fullscreen, MiniMap, Draw
+            
+            # Mouse position with coordinates
+            MousePosition(
+                position='bottomleft',
+                separator=' | ',
+                empty_string='Drag map to explore',
+                lng_first=True,
+                num_digits=4,
+                prefix='Coordinates:',
+                lat_formatter=lambda x: f'Lat: {x:.4f}°',
+                lng_formatter=lambda x: f'Lon: {x:.4f}°'
+            ).add_to(m)
+            
+            # Measurement tool
+            MeasureControl(
+                position='bottomleft',
+                primary_length_unit='kilometers',
+                secondary_length_unit='miles',
+                primary_area_unit='sqkilometers',
+                secondary_area_unit='acres'
+            ).add_to(m)
+            
+            # Fullscreen mode
+            Fullscreen(
+                position='topright',
+                title='Expand me',
+                title_cancel='Exit fullscreen',
+                force_separate_button=True
+            ).add_to(m)
+            
+            # Mini map for reference
+            minimap = MiniMap(
+                tile_layer='CartoDB dark_matter',
+                position='bottomright',
+                width=150,
+                height=150,
+                zoom_level_offset=-5,
+                zoom_level_fixed=None,
+                center_fixed=False,
+                toggle_display=True
+            )
+            m.add_child(minimap)
+            
+            # Add draw tools
+            draw = Draw(
+                export=True,
+                position='topleft',
+                draw_options={
+                    'polyline': False,
+                    'rectangle': True,
+                    'circle': True,
+                    'marker': True,
+                    'circlemarker': False,
+                },
+                edit_options={'edit': True}
+            )
+            m.add_child(draw)
+            
+            # Add layer control
+            folium.LayerControl(
+                position='topright',
+                collapsed=True,
+                autoZIndex=True
+            ).add_to(m)
+            
+            # Add custom CSS for better appearance
+            map_css = """
+            <style>
+                .folium-map {
+                    border: 3px solid #00ff88 !important;
+                    border-radius: 15px !important;
+                    box-shadow: 0 10px 30px rgba(0, 255, 136, 0.3) !important;
+                }
+                .leaflet-control-attribution {
+                    background: rgba(0, 0, 0, 0.7) !important;
+                    color: #cccccc !important;
+                    font-size: 11px !important;
+                    padding: 5px !important;
+                    border-radius: 3px !important;
+                }
+                .leaflet-popup-content {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+                    background: #1a1a1a !important;
+                    color: white !important;
+                    border-radius: 5px !important;
+                }
+                .leaflet-popup-content-wrapper {
+                    background: #1a1a1a !important;
+                    color: white !important;
+                    border-radius: 5px !important;
+                    border: 1px solid #00ff88 !important;
+                }
+            </style>
+            """
+            st.markdown(map_css, unsafe_allow_html=True)
             
             # Display the interactive map
-            st.plotly_chart(fig, use_container_width=True, config={
-                'displayModeBar': True,
-                'scrollZoom': True,
-                'displaylogo': False,
-                'modeBarButtonsToAdd': [
-                    'zoomIn2d', 
-                    'zoomOut2d', 
-                    'autoScale2d',
-                    'resetScale2d',
-                    'toImage'
-                ],
-                'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d']
-            })
+            map_data = st_folium(
+                m, 
+                width=None, 
+                height=600,
+                returned_objects=["last_clicked", "bounds", "zoom", "last_active_drawing"],
+                key="gis_map_main"
+            )
+            
+            # Update zoom state if map was zoomed
+            if map_data and 'zoom' in map_data and map_data['zoom'] is not None:
+                st.session_state.current_zoom = map_data['zoom']
             
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -546,23 +616,25 @@ if st.session_state.ee_initialized:
                         <span style="color: #cccccc; font-size: 0.9em;">
                         • <strong>Scroll:</strong> Zoom in/out<br>
                         • <strong>Drag:</strong> Pan map<br>
-                        • <strong>Right-click drag:</strong> Rotate (3D)
+                        • <strong>Click:</strong> Get coordinates
                         </span>
                     </div>
                     <div>
-                        <strong style="color: #ffffff;">🌍 View Modes:</strong><br>
+                        <strong style="color: #ffffff;">🗺️ Map Layers:</strong><br>
                         <span style="color: #cccccc; font-size: 0.9em;">
-                        • <strong>Zoom < 5:</strong> Global view<br>
-                        • <strong>Zoom 5-10:</strong> Regional<br>
-                        • <strong>Zoom > 10:</strong> 3D terrain
+                        • <strong>Street Map:</strong> Default view<br>
+                        • <strong>Satellite:</strong> Aerial imagery<br>
+                        • <strong>Terrain:</strong> Elevation data<br>
+                        • <strong>Dark/Light:</strong> Theme options
                         </span>
                     </div>
                     <div>
-                        <strong style="color: #ffffff;">🛠️ Controls:</strong><br>
+                        <strong style="color: #ffffff;">🛠️ Tools:</strong><br>
                         <span style="color: #cccccc; font-size: 0.9em;">
-                        • <strong>Reset:</strong> Home icon<br>
-                        • <strong>Layers:</strong> Sidebar options<br>
-                        • <strong>Export:</strong> Camera icon
+                        • <strong>Measurement:</strong> Distance/Area<br>
+                        • <strong>Fullscreen:</strong> Expand view<br>
+                        • <strong>Draw:</strong> Mark areas<br>
+                        • <strong>Mini-map:</strong> Overview
                         </span>
                     </div>
                 </div>
@@ -572,13 +644,11 @@ if st.session_state.ee_initialized:
             # Professional GIS information panel
             col1, col2 = st.columns([1, 1])
             with col2:
-                current_view = "🌐 Global View" if st.session_state.current_zoom < 5 else "🗺️ Regional View" if st.session_state.current_zoom < 10 else "🏔️ 3D Detailed View"
-                
                 st.markdown(f"""
                 <div style="background: linear-gradient(135deg, #1a1a2a, #2a2a3a); padding: 20px; border-radius: 15px; border: 2px solid #00ff88; box-shadow: 0 8px 25px rgba(0, 255, 136, 0.15);">
                     <h4 style="color: #00ff88; margin-top: 0; text-align: center;">🗺️ MAP DATA PANEL</h4>
                     <div style="text-align: center; margin-bottom: 15px;">
-                        <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">{current_view}</span>
+                        <span style="background: #00ff88; color: #000000; padding: 5px 15px; border-radius: 20px; font-size: 12px; font-weight: bold;">INTERACTIVE GIS MAP</span>
                     </div>
                     <hr style="border-color: #00ff88;">
                     
@@ -599,32 +669,33 @@ if st.session_state.ee_initialized:
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">🗺️ Current Style:</strong><br>
-                        <span style="color: #00ff88;">{map_styles[st.session_state.map_style]}</span>
+                        <strong style="color: #ffffff;">🔍 Zoom Level:</strong><br>
+                        <span style="color: #00ff88;">{st.session_state.current_zoom:.1f}x</span>
                     </div>
                     
                     <div style="margin: 15px 0;">
-                        <strong style="color: #ffffff;">🔍 Active Layers:</strong><br>
+                        <strong style="color: #ffffff;">🗺️ Available Layers:</strong><br>
                         <span style="color: #cccccc; font-size: 0.9em;">
-                        {"• Terrain " if show_terrain else ""}
-                        {"• Labels " if show_labels else ""}
-                        {"• 3D Buildings " if show_buildings else ""}
-                        {"• Water Bodies " if show_water else ""}
+                        • Street Maps<br>
+                        • Satellite Imagery<br>
+                        • Terrain View<br>
+                        • Dark/Light Themes<br>
+                        • Study Area Highlight
                         </span>
                     </div>
                     
                     <div style="background: rgba(0, 255, 136, 0.1); padding: 12px; border-radius: 8px; margin-top: 20px; border-left: 3px solid #00ff88;">
                         <small style="color: #00ff88; display: block; margin-bottom: 5px;">💡 Pro Tip:</small>
                         <small style="color: #888888; font-size: 0.85em;">
-                        • Zoom <strong>out</strong> for global/globe view<br>
-                        • Zoom <strong>in</strong> for 3D terrain details<br>
-                        • Change map style in sidebar
+                        • Click <strong>layers icon</strong> (top-right) to switch views<br>
+                        • Use <strong>measurement tool</strong> for distances<br>
+                        • Click <strong>study area</strong> for detailed info
                         </small>
                     </div>
                     
                     <div style="background: #0a0a0a; padding: 10px; border-radius: 5px; margin-top: 20px; text-align: center;">
                         <small style="color: #00ff88;">📊 KHISBA GIS Professional</small><br>
-                        <small style="color: #888888;">Powered by Mapbox & Earth Engine</small>
+                        <small style="color: #888888;">Powered by Folium & Earth Engine</small>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -632,7 +703,7 @@ if st.session_state.ee_initialized:
             st.session_state.selected_geometry = geometry
             
             # Professional status indicator
-            zoom_icon = "🌐" if st.session_state.current_zoom < 5 else "🗺️" if st.session_state.current_zoom < 10 else "🏔️"
+            zoom_icon = "🌐" if st.session_state.current_zoom < 5 else "🗺️" if st.session_state.current_zoom < 10 else "🔍"
             st.markdown(f"""
             <div style="text-align: center; background: linear-gradient(90deg, #00ff88, #004422); padding: 12px; border-radius: 8px; margin: 15px 0; border: 1px solid #ffffff;">
                 <strong style="color: white; font-size: 1.1em;">✅ GIS WORKSPACE ACTIVE</strong><br>
@@ -940,7 +1011,7 @@ if st.session_state.analysis_results:
                                 'text': f'<b>{index}</b> - Vegetation Analysis',
                                 'x': 0.5,
                                 'xanchor': 'center',
-                            'font': {'size': 20, 'color': '#ffffff'}
+                                'font': {'size': 20, 'color': '#ffffff'}
                             },
                             plot_bgcolor='#0E1117',
                             paper_bgcolor='#0E1117',
