@@ -12,6 +12,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
+import base64
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -24,8 +25,8 @@ st.markdown("""
     
     /* Remove Streamlit default padding */
     .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
     
     /* Green & Black Theme */
@@ -72,12 +73,12 @@ st.markdown("""
     .main-container {
         display: flex;
         gap: 20px;
-        max-width: 1400px;
+        max-width: 1800px;
         margin: 0 auto;
     }
     
     .sidebar-container {
-        width: 300px;
+        width: 320px;
         flex-shrink: 0;
     }
     
@@ -315,6 +316,16 @@ st.markdown("""
         height: 600px;
     }
     
+    /* 3D Globe container */
+    .globe-container {
+        border: 1px solid var(--border-gray);
+        border-radius: 10px;
+        overflow: hidden;
+        height: 600px;
+        background: #000;
+        position: relative;
+    }
+    
     /* Section divider */
     .section-divider {
         height: 1px;
@@ -368,10 +379,89 @@ st.markdown("""
         margin: 15px 0;
     }
     
+    /* View toggle */
+    .view-toggle {
+        display: flex;
+        background: var(--card-black);
+        border-radius: 8px;
+        padding: 4px;
+        border: 1px solid var(--border-gray);
+        margin-bottom: 15px;
+    }
+    
+    .view-option {
+        flex: 1;
+        padding: 8px 12px;
+        text-align: center;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        border-radius: 6px;
+        transition: all 0.2s;
+        color: var(--text-gray);
+    }
+    
+    .view-option.active {
+        background: var(--primary-green);
+        color: var(--primary-black);
+    }
+    
     /* Hide Streamlit default elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Globe controls */
+    .globe-controls {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: rgba(0, 20, 40, 0.9);
+        border-radius: 8px;
+        padding: 10px;
+        border: 1px solid rgba(0, 100, 200, 0.3);
+        z-index: 1000;
+        max-width: 200px;
+    }
+    
+    .globe-control-group {
+        margin-bottom: 10px;
+    }
+    
+    .globe-control-group:last-child {
+        margin-bottom: 0;
+    }
+    
+    .globe-control-label {
+        color: #a0d2ff;
+        font-size: 11px;
+        margin-bottom: 3px;
+        display: block;
+    }
+    
+    .globe-slider {
+        width: 100%;
+        height: 4px;
+        background: rgba(100, 150, 255, 0.2);
+        border-radius: 2px;
+        outline: none;
+    }
+    
+    .globe-btn {
+        background: rgba(0, 50, 100, 0.7);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        width: 100%;
+        margin: 2px 0;
+    }
+    
+    .globe-btn:hover {
+        background: rgba(79, 172, 254, 0.8);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -441,12 +531,18 @@ if 'ee_auto_initialized' not in st.session_state:
             st.session_state.ee_auto_initialized = False
             st.session_state.ee_initialized = False
 
+# Initialize session state for globe
+if 'globe_view' not in st.session_state:
+    st.session_state.globe_view = "globe"  # "globe" or "map"
+if 'selected_globe_region' not in st.session_state:
+    st.session_state.selected_globe_region = None
+
 # Page configuration
 st.set_page_config(
-    page_title="Khisba GIS - Vegetation Analysis",
-    page_icon="🌿",
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="collapsed"  # Hide Streamlit sidebar
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize session state
@@ -467,8 +563,8 @@ if not st.session_state.authenticated:
     <div class="main-container">
         <div class="content-container" style="max-width: 500px; margin: 100px auto;">
             <div class="card">
-                <h1 style="text-align: center; margin-bottom: 10px;">KHISBA GIS</h1>
-                <p style="text-align: center; color: #999999; margin-bottom: 30px;">Professional Vegetation Analytics</p>
+                <h1 style="text-align: center; margin-bottom: 10px;">🌍 KHISBA GIS</h1>
+                <p style="text-align: center; color: #999999; margin-bottom: 30px;">3D Global Vegetation Analytics</p>
                 
                 <div class="alert alert-warning" style="text-align: center;">
                     🔐 Authentication Required
@@ -501,6 +597,7 @@ if not st.session_state.authenticated:
                 <p style="text-align: center; color: #00ff88; font-weight: 600; margin-bottom: 10px;">Demo Access</p>
                 <p style="text-align: center; color: #999999;">Use <strong>admin</strong> / <strong>admin</strong> for demo</p>
                 <div style="display: flex; justify-content: center; gap: 10px; margin-top: 15px;">
+                    <span class="status-badge">3D Globe</span>
                     <span class="status-badge">GIS Analytics</span>
                     <span class="status-badge">Satellite Data</span>
                 </div>
@@ -515,15 +612,31 @@ if not st.session_state.authenticated:
 st.markdown("""
 <div class="compact-header">
     <div>
-        <h1>KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 14px;">Professional Vegetation Indices Analytics</p>
+        <h1>🌍 KHISBA GIS</h1>
+        <p style="color: #999999; margin: 0; font-size: 14px;">3D Global Vegetation Indices Analytics</p>
     </div>
     <div style="display: flex; gap: 10px;">
         <span class="status-badge">Connected</span>
-        <span class="status-badge">v1.0</span>
+        <span class="status-badge">3D Enabled</span>
+        <span class="status-badge">v2.0</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# View Toggle
+col_toggle1, col_toggle2, col_toggle3 = st.columns([1, 2, 1])
+with col_toggle2:
+    st.markdown('<div class="view-toggle">', unsafe_allow_html=True)
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("🌍 3D Globe View", use_container_width=True, key="globe_view_btn"):
+            st.session_state.globe_view = "globe"
+            st.rerun()
+    with col_b:
+        if st.button("🗺️ 2D Analysis Map", use_container_width=True, key="map_view_btn"):
+            st.session_state.globe_view = "map"
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Create main layout containers
 col1, col2 = st.columns([0.25, 0.75], gap="large")
@@ -734,120 +847,662 @@ with col1:
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
-
-# MAIN CONTENT AREA - Map and Results
-with col2:
-    # Map Display
-    if selected_country:
-        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Geographic Analysis Map</h3></div>', unsafe_allow_html=True)
+    
+    # Quick Region Selection for Globe
+    if st.session_state.globe_view == "globe":
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Quick Globe Views</h3></div>', unsafe_allow_html=True)
         
-        try:
-            # Determine geometry
-            if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
-                geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-                area_level = "Municipality"
-            elif selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
-                geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                area_name = f"{selected_admin1}, {selected_country}"
-                area_level = "State/Province"
-            else:
-                geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                area_name = selected_country
-                area_level = "Country"
-            
-            bounds = geometry.geometry().bounds().getInfo()
-            coords = bounds['coordinates'][0]
-            lats = [coord[1] for coord in coords]
-            lons = [coord[0] for coord in coords]
-            center_lat = sum(lats) / len(lats)
-            center_lon = sum(lons) / len(lons)
-            
-            # Create map
-            m = folium.Map(
-                location=[center_lat, center_lon],
-                zoom_start=8,
-                tiles=None,
-                control_scale=True,
-                prefer_canvas=True
-            )
-            
-            # Add tile layers
-            folium.TileLayer(
-                'OpenStreetMap',
-                name='Street Map',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            folium.TileLayer(
-                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-                attr='Esri',
-                name='Satellite',
-                overlay=False,
-                control=True
-            ).add_to(m)
-            
-            # Add study area
-            folium.GeoJson(
-                bounds,
-                style_function=lambda x: {
-                    'fillColor': '#00ff88',
-                    'color': '#ffffff',
-                    'weight': 3,
-                    'fillOpacity': 0.1,
-                    'dashArray': '5, 5'
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            if st.button("🌏 Asia", use_container_width=True):
+                st.session_state.selected_globe_region = "asia"
+        with col_g2:
+            if st.button("🌎 Americas", use_container_width=True):
+                st.session_state.selected_globe_region = "americas"
+        
+        col_g3, col_g4 = st.columns(2)
+        with col_g3:
+            if st.button("🌍 Europe", use_container_width=True):
+                st.session_state.selected_globe_region = "europe"
+        with col_g4:
+            if st.button("🌍 Africa", use_container_width=True):
+                st.session_state.selected_globe_region = "africa"
+        
+        if st.button("🌐 Reset Globe View", use_container_width=True):
+            st.session_state.selected_globe_region = None
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# MAIN CONTENT AREA - Map/Globe and Results
+with col2:
+    # Display either Globe or Map based on selection
+    if st.session_state.globe_view == "globe":
+        # 3D Globe Display
+        st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+        st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Earth Globe</h3></div>', unsafe_allow_html=True)
+        
+        # Generate HTML for 3D globe
+        globe_html = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>3D Earth Globe</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
                 }
-            ).add_to(m)
-            
-            # Add controls
-            from folium.plugins import MousePosition, MeasureControl
-            MousePosition().add_to(m)
-            MeasureControl(primary_length_unit='kilometers').add_to(m)
-            folium.LayerControl().add_to(m)
-            
-            st.session_state.selected_geometry = geometry
-            
-            # Display map
-            st_folium(
-                m, 
-                width=None, 
-                height=500,
-                returned_objects=["last_clicked", "bounds"],
-                key="gis_map"
-            )
-            
-            # Area info at bottom of map
-            st.markdown(f"""
-            <div class="info-panel">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="info-item">
-                        <div class="info-label">Study Area</div>
-                        <div class="info-value">{area_name}</div>
+                
+                body {
+                    background: #000;
+                    overflow: hidden;
+                    font-family: Arial, sans-serif;
+                }
+                
+                #globe-container {
+                    width: 100%;
+                    height: 500px;
+                    position: relative;
+                }
+                
+                #globe-canvas {
+                    width: 100%;
+                    height: 100%;
+                    display: block;
+                }
+                
+                .globe-controls {
+                    position: absolute;
+                    top: 15px;
+                    right: 15px;
+                    background: rgba(0, 20, 40, 0.9);
+                    border-radius: 8px;
+                    padding: 15px;
+                    border: 1px solid rgba(0, 100, 200, 0.3);
+                    z-index: 1000;
+                    max-width: 250px;
+                    color: white;
+                }
+                
+                .control-group {
+                    margin-bottom: 15px;
+                }
+                
+                .control-group:last-child {
+                    margin-bottom: 0;
+                }
+                
+                .control-label {
+                    color: #a0d2ff;
+                    font-size: 12px;
+                    margin-bottom: 5px;
+                    display: block;
+                }
+                
+                .globe-slider {
+                    width: 100%;
+                    height: 4px;
+                    background: rgba(100, 150, 255, 0.2);
+                    border-radius: 2px;
+                    outline: none;
+                    -webkit-appearance: none;
+                }
+                
+                .globe-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #4facfe;
+                    cursor: pointer;
+                }
+                
+                .btn-group {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    margin-top: 10px;
+                }
+                
+                .globe-btn {
+                    flex: 1;
+                    min-width: 70px;
+                    padding: 8px 12px;
+                    background: rgba(0, 50, 100, 0.7);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                    font-size: 12px;
+                    text-align: center;
+                }
+                
+                .globe-btn:hover {
+                    background: rgba(79, 172, 254, 0.8);
+                    transform: translateY(-2px);
+                }
+                
+                .globe-btn.active {
+                    background: rgba(79, 172, 254, 1);
+                    box-shadow: 0 0 10px rgba(79, 172, 254, 0.7);
+                }
+                
+                .coordinates {
+                    position: absolute;
+                    bottom: 15px;
+                    left: 15px;
+                    background: rgba(0, 20, 40, 0.9);
+                    padding: 10px 15px;
+                    border-radius: 6px;
+                    font-family: monospace;
+                    font-size: 12px;
+                    color: white;
+                    border: 1px solid rgba(100, 150, 255, 0.3);
+                }
+                
+                .instructions {
+                    position: absolute;
+                    bottom: 15px;
+                    right: 15px;
+                    background: rgba(0, 20, 40, 0.9);
+                    padding: 10px 15px;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    color: #a0d2ff;
+                    max-width: 200px;
+                    border: 1px solid rgba(100, 150, 255, 0.3);
+                }
+            </style>
+        </head>
+        <body>
+            <div id="globe-container">
+                <canvas id="globe-canvas"></canvas>
+                
+                <div class="globe-controls">
+                    <div class="control-group">
+                        <div class="control-label">Rotation Speed</div>
+                        <input type="range" class="globe-slider" id="rotation-speed" min="0" max="1" step="0.1" value="0.3">
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">Level</div>
-                        <div class="info-value" style="color: #00ff88;">{area_level}</div>
+                    
+                    <div class="control-group">
+                        <div class="control-label">Cloud Opacity</div>
+                        <input type="range" class="globe-slider" id="cloud-opacity" min="0" max="1" step="0.1" value="0.7">
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">Coordinates</div>
-                        <div class="info-value">{center_lat:.4f}°, {center_lon:.4f}°</div>
+                    
+                    <div class="control-group">
+                        <div class="btn-group">
+                            <button class="globe-btn" id="btn-realistic">Realistic</button>
+                            <button class="globe-btn" id="btn-topographic">Topo</button>
+                            <button class="globe-btn" id="btn-night">Night</button>
+                        </div>
                     </div>
-                    <div class="info-item">
-                        <div class="info-label">Status</div>
-                        <div class="info-value" style="color: #00ff88;">Active</div>
+                    
+                    <div class="control-group">
+                        <div class="btn-group">
+                            <button class="globe-btn" id="btn-day">Day</button>
+                            <button class="globe-btn" id="btn-night-cycle">Night</button>
+                            <button class="globe-btn" id="btn-auto">Auto</button>
+                        </div>
                     </div>
                 </div>
+                
+                <div class="coordinates">
+                    <div>Lat: <span id="latitude">0.0°</span></div>
+                    <div>Lon: <span id="longitude">0.0°</span></div>
+                </div>
+                
+                <div class="instructions">
+                    <strong>Controls:</strong><br>
+                    • Drag to rotate<br>
+                    • Scroll to zoom<br>
+                    • Right-click to pan
+                </div>
             </div>
-            """, unsafe_allow_html=True)
             
-        except Exception as e:
-            st.error(f"❌ Map Error: {str(e)}")
+            <script>
+                // Initialize variables
+                let scene, camera, renderer, earth, clouds, atmosphere;
+                let controls, sunLight, ambientLight;
+                let rotationSpeed = 0.001;
+                let autoRotate = true;
+                let autoLightCycle = false;
+                let lightAngle = 0;
+                
+                // Region views configuration
+                const regionViews = {
+                    asia: { position: [-3, 1, 4], rotation: [0, 0, 0] },
+                    americas: { position: [3, 1, 4], rotation: [0, 0, 0] },
+                    europe: { position: [0, 2, 5], rotation: [0, 0, 0] },
+                    africa: { position: [0, 0, 5], rotation: [0, 0, 0] }
+                };
+                
+                // Initialize Three.js scene
+                function init() {
+                    // Create scene
+                    scene = new THREE.Scene();
+                    scene.background = new THREE.Color(0x001020);
+                    
+                    // Create camera
+                    camera = new THREE.PerspectiveCamera(
+                        45,
+                        window.innerWidth / window.innerHeight,
+                        0.1,
+                        1000
+                    );
+                    camera.position.z = 5;
+                    
+                    // Create renderer
+                    renderer = new THREE.WebGLRenderer({
+                        canvas: document.getElementById('globe-canvas'),
+                        antialias: true,
+                        alpha: true
+                    });
+                    renderer.setSize(document.getElementById('globe-container').offsetWidth, 
+                                   document.getElementById('globe-container').offsetHeight);
+                    
+                    // Add orbit controls
+                    controls = new THREE.OrbitControls(camera, renderer.domElement);
+                    controls.enableDamping = true;
+                    controls.dampingFactor = 0.05;
+                    controls.minDistance = 2;
+                    controls.maxDistance = 10;
+                    controls.autoRotate = autoRotate;
+                    controls.autoRotateSpeed = rotationSpeed * 100;
+                    
+                    // Add lighting
+                    ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+                    scene.add(ambientLight);
+                    
+                    sunLight = new THREE.DirectionalLight(0xffffff, 1);
+                    sunLight.position.set(5, 3, 5);
+                    scene.add(sunLight);
+                    
+                    // Create Earth
+                    createEarth();
+                    
+                    // Create stars
+                    createStars();
+                    
+                    // Setup event listeners
+                    setupEventListeners();
+                    
+                    // Start animation
+                    animate();
+                    
+                    // Handle window resize
+                    window.addEventListener('resize', onWindowResize);
+                    
+                    // Apply initial region view if specified
+                    const regionData = localStorage.getItem('selectedRegion') || '';
+                    if (regionData && regionViews[regionData]) {
+                        const view = regionViews[regionData];
+                        camera.position.set(view.position[0], view.position[1], view.position[2]);
+                        controls.update();
+                        localStorage.removeItem('selectedRegion');
+                    }
+                }
+                
+                // Create Earth sphere
+                function createEarth() {
+                    const geometry = new THREE.SphereGeometry(1, 64, 64);
+                    
+                    // Create material with gradient texture
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 2048;
+                    canvas.height = 1024;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Create gradient for realistic look
+                    const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+                    gradient.addColorStop(0, '#1a5fb4');
+                    gradient.addColorStop(0.3, '#26a269');
+                    gradient.addColorStop(0.5, '#f5c211');
+                    gradient.addColorStop(0.7, '#c64600');
+                    gradient.addColorStop(1, '#5c5c5c');
+                    
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Add continent-like shapes
+                    ctx.fillStyle = 'rgba(40, 130, 60, 0.7)';
+                    ctx.beginPath();
+                    ctx.ellipse(500, 300, 400, 200, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(1500, 400, 300, 250, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.ellipse(1000, 700, 350, 150, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    const texture = new THREE.CanvasTexture(canvas);
+                    
+                    const material = new THREE.MeshPhongMaterial({
+                        map: texture,
+                        shininess: 5
+                    });
+                    
+                    earth = new THREE.Mesh(geometry, material);
+                    earth.rotation.y = Math.PI;
+                    scene.add(earth);
+                    
+                    // Create clouds
+                    const cloudGeometry = new THREE.SphereGeometry(1.01, 64, 64);
+                    const cloudMaterial = new THREE.MeshPhongMaterial({
+                        color: 0xffffff,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                    
+                    clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                    scene.add(clouds);
+                    
+                    // Create atmosphere
+                    const atmosphereGeometry = new THREE.SphereGeometry(1.1, 64, 64);
+                    const atmosphereMaterial = new THREE.MeshPhongMaterial({
+                        color: 0x0099ff,
+                        transparent: true,
+                        opacity: 0.1,
+                        side: THREE.BackSide
+                    });
+                    
+                    atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+                    scene.add(atmosphere);
+                }
+                
+                // Create stars background
+                function createStars() {
+                    const starGeometry = new THREE.BufferGeometry();
+                    const starCount = 2000;
+                    const positions = new Float32Array(starCount * 3);
+                    
+                    for (let i = 0; i < starCount * 3; i += 3) {
+                        positions[i] = (Math.random() - 0.5) * 1000;
+                        positions[i + 1] = (Math.random() - 0.5) * 1000;
+                        positions[i + 2] = (Math.random() - 0.5) * 1000;
+                    }
+                    
+                    starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    
+                    const starMaterial = new THREE.PointsMaterial({
+                        color: 0xffffff,
+                        size: 1,
+                        sizeAttenuation: true
+                    });
+                    
+                    const stars = new THREE.Points(starGeometry, starMaterial);
+                    scene.add(stars);
+                }
+                
+                // Setup event listeners for controls
+                function setupEventListeners() {
+                    // Rotation speed slider
+                    document.getElementById('rotation-speed').addEventListener('input', function() {
+                        rotationSpeed = parseFloat(this.value) * 0.003;
+                        controls.autoRotateSpeed = rotationSpeed * 100;
+                    });
+                    
+                    // Cloud opacity slider
+                    document.getElementById('cloud-opacity').addEventListener('input', function() {
+                        if (clouds && clouds.material) {
+                            clouds.material.opacity = parseFloat(this.value);
+                        }
+                    });
+                    
+                    // Map style buttons
+                    document.getElementById('btn-realistic').addEventListener('click', function() {
+                        setActiveButton(this);
+                        scene.background = new THREE.Color(0x001020);
+                        if (atmosphere) atmosphere.visible = true;
+                    });
+                    
+                    document.getElementById('btn-topographic').addEventListener('click', function() {
+                        setActiveButton(this);
+                        scene.background = new THREE.Color(0x102030);
+                        if (atmosphere) atmosphere.visible = false;
+                    });
+                    
+                    document.getElementById('btn-night').addEventListener('click', function() {
+                        setActiveButton(this);
+                        scene.background = new THREE.Color(0x000010);
+                        if (atmosphere) atmosphere.visible = true;
+                    });
+                    
+                    // Lighting buttons
+                    document.getElementById('btn-day').addEventListener('click', function() {
+                        setActiveButton(this);
+                        autoLightCycle = false;
+                        sunLight.intensity = 1;
+                        ambientLight.intensity = 0.3;
+                    });
+                    
+                    document.getElementById('btn-night-cycle').addEventListener('click', function() {
+                        setActiveButton(this);
+                        autoLightCycle = false;
+                        sunLight.intensity = 0.1;
+                        ambientLight.intensity = 0.1;
+                    });
+                    
+                    document.getElementById('btn-auto').addEventListener('click', function() {
+                        setActiveButton(this);
+                        autoLightCycle = true;
+                    });
+                    
+                    // Set initial active buttons
+                    document.getElementById('btn-realistic').classList.add('active');
+                    document.getElementById('btn-day').classList.add('active');
+                }
+                
+                // Helper to set active button state
+                function setActiveButton(button) {
+                    const parent = button.parentElement;
+                    const buttons = parent.querySelectorAll('.globe-btn');
+                    buttons.forEach(btn => btn.classList.remove('active'));
+                    button.classList.add('active');
+                }
+                
+                // Update coordinates display
+                function updateCoordinates() {
+                    const vector = new THREE.Vector3();
+                    camera.getWorldDirection(vector);
+                    
+                    const lat = 90 - (Math.acos(vector.y) * 180 / Math.PI);
+                    const lon = ((Math.atan2(vector.x, vector.z) * 180 / Math.PI) + 180) % 360 - 180;
+                    
+                    document.getElementById('latitude').textContent = lat.toFixed(1) + '°';
+                    document.getElementById('longitude').textContent = lon.toFixed(1) + '°';
+                }
+                
+                // Animation loop
+                function animate() {
+                    requestAnimationFrame(animate);
+                    
+                    // Rotate Earth and clouds
+                    if (earth) earth.rotation.y += rotationSpeed;
+                    if (clouds) clouds.rotation.y += rotationSpeed * 0.95;
+                    
+                    // Auto light cycle
+                    if (autoLightCycle) {
+                        lightAngle += 0.003;
+                        sunLight.position.x = 10 * Math.cos(lightAngle);
+                        sunLight.position.z = 10 * Math.sin(lightAngle);
+                        
+                        const sunHeight = sunLight.position.y;
+                        ambientLight.intensity = 0.1 + 0.2 * Math.max(0, Math.sin(lightAngle));
+                    }
+                    
+                    controls.update();
+                    updateCoordinates();
+                    renderer.render(scene, camera);
+                }
+                
+                // Handle window resize
+                function onWindowResize() {
+                    camera.aspect = document.getElementById('globe-container').offsetWidth / 
+                                    document.getElementById('globe-container').offsetHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(document.getElementById('globe-container').offsetWidth, 
+                                   document.getElementById('globe-container').offsetHeight);
+                }
+                
+                // Initialize when page loads
+                window.addEventListener('load', init);
+                
+                // Handle region selection from Streamlit
+                window.addEventListener('message', function(event) {
+                    if (event.data && event.data.type === 'SET_GLOBE_REGION') {
+                        const region = event.data.region;
+                        if (regionViews[region]) {
+                            const view = regionViews[region];
+                            camera.position.set(view.position[0], view.position[1], view.position[2]);
+                            controls.update();
+                        }
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        """
+        
+        # Display the globe HTML
+        st.components.v1.html(globe_html, height=550)
+        
+        # Add region selection buttons that communicate with the globe
+        if st.session_state.selected_globe_region:
+            st.markdown(f"""
+            <script>
+                window.parent.postMessage({{
+                    type: 'SET_GLOBE_REGION',
+                    region: '{st.session_state.selected_globe_region}'
+                }}, '*');
+            </script>
+            """, unsafe_allow_html=True)
+            # Reset after sending
+            st.session_state.selected_globe_region = None
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Analysis Results Section
+    else:
+        # 2D Map Display (Original)
+        if selected_country:
+            st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
+            st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Geographic Analysis Map</h3></div>', unsafe_allow_html=True)
+            
+            try:
+                # Determine geometry
+                if selected_admin2 and 'admin2_fc' in locals() and admin2_fc is not None:
+                    geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                    area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                    area_level = "Municipality"
+                elif selected_admin1 and 'admin1_fc' in locals() and admin1_fc is not None:
+                    geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                    area_name = f"{selected_admin1}, {selected_country}"
+                    area_level = "State/Province"
+                else:
+                    geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                    area_name = selected_country
+                    area_level = "Country"
+                
+                bounds = geometry.geometry().bounds().getInfo()
+                coords = bounds['coordinates'][0]
+                lats = [coord[1] for coord in coords]
+                lons = [coord[0] for coord in coords]
+                center_lat = sum(lats) / len(lats)
+                center_lon = sum(lons) / len(lons)
+                
+                # Create map
+                m = folium.Map(
+                    location=[center_lat, center_lon],
+                    zoom_start=8,
+                    tiles=None,
+                    control_scale=True,
+                    prefer_canvas=True
+                )
+                
+                # Add tile layers
+                folium.TileLayer(
+                    'OpenStreetMap',
+                    name='Street Map',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                folium.TileLayer(
+                    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri',
+                    name='Satellite',
+                    overlay=False,
+                    control=True
+                ).add_to(m)
+                
+                # Add study area
+                folium.GeoJson(
+                    bounds,
+                    style_function=lambda x: {
+                        'fillColor': '#00ff88',
+                        'color': '#ffffff',
+                        'weight': 3,
+                        'fillOpacity': 0.1,
+                        'dashArray': '5, 5'
+                    }
+                ).add_to(m)
+                
+                # Add controls
+                from folium.plugins import MousePosition, MeasureControl
+                MousePosition().add_to(m)
+                MeasureControl(primary_length_unit='kilometers').add_to(m)
+                folium.LayerControl().add_to(m)
+                
+                st.session_state.selected_geometry = geometry
+                
+                # Display map
+                st_folium(
+                    m, 
+                    width=None, 
+                    height=500,
+                    returned_objects=["last_clicked", "bounds"],
+                    key="gis_map"
+                )
+                
+                # Area info at bottom of map
+                st.markdown(f"""
+                <div class="info-panel">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="info-item">
+                            <div class="info-label">Study Area</div>
+                            <div class="info-value">{area_name}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Level</div>
+                            <div class="info-value" style="color: #00ff88;">{area_level}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Coordinates</div>
+                            <div class="info-value">{center_lat:.4f}°, {center_lon:.4f}°</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Status</div>
+                            <div class="info-value" style="color: #00ff88;">Active</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"❌ Map Error: {str(e)}")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Analysis Results Section (Same for both views)
     if st.session_state.analysis_results:
         st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
         
@@ -1063,19 +1718,20 @@ with col2:
 # Status indicators at bottom
 if not st.session_state.ee_initialized:
     st.markdown('<div class="alert alert-warning">👆 Earth Engine initialization required. Please upload credentials.</div>', unsafe_allow_html=True)
-elif st.session_state.selected_geometry is None:
+elif st.session_state.selected_geometry is None and st.session_state.globe_view == "map":
     st.markdown('<div class="alert alert-warning">👆 Please select a study area to begin analysis.</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
 <div class="section-divider"></div>
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
-    <p style="margin: 5px 0;">KHISBA GIS • Professional Vegetation Analytics Platform</p>
+    <p style="margin: 5px 0;">KHISBA GIS • 3D Global Vegetation Analytics Platform</p>
     <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
     <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+        <span class="status-badge">3D Earth Globe</span>
         <span class="status-badge">Earth Engine</span>
         <span class="status-badge">Streamlit</span>
-        <span class="status-badge">Folium</span>
+        <span class="status-badge">Three.js</span>
     </div>
 </div>
-""", unsafe_allow_html=True)     
+""", unsafe_allow_html=True)
