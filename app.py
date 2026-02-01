@@ -1,4 +1,4 @@
-add that html js css globale view to and embed with analysis  this streamlit app import streamlit as st
+import streamlit as st
 import json
 import tempfile
 import os
