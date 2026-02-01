@@ -225,6 +225,31 @@ st.markdown("""
         letter-spacing: 0.5px;
     }
     
+    /* Alert boxes */
+    .alert {
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin: 10px 0;
+        border: 1px solid;
+        background: var(--card-black);
+        font-size: 14px;
+    }
+    
+    .alert-success {
+        border-color: rgba(0, 255, 136, 0.3);
+        color: var(--primary-green);
+    }
+    
+    .alert-warning {
+        border-color: rgba(255, 170, 0, 0.3);
+        color: #ffaa00;
+    }
+    
+    .alert-error {
+        border-color: rgba(255, 68, 68, 0.3);
+        color: #ff4444;
+    }
+    
     /* Info panel */
     .info-panel {
         background: var(--card-black);
@@ -282,6 +307,26 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Dataframes */
+    .dataframe {
+        background: var(--card-black) !important;
+        border: 1px solid var(--border-gray) !important;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .dataframe th {
+        background: var(--secondary-black) !important;
+        color: var(--primary-green) !important;
+        font-weight: 600 !important;
+        border-color: var(--border-gray) !important;
+    }
+    
+    .dataframe td {
+        color: var(--text-light-gray) !important;
+        border-color: var(--border-gray) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -364,6 +409,8 @@ if 'selected_coordinates' not in st.session_state:
     st.session_state.selected_coordinates = None
 if 'selected_area_name' not in st.session_state:
     st.session_state.selected_area_name = None
+if 'map_style' not in st.session_state:
+    st.session_state.map_style = "satellite"  # satellite, street, dark, terrain
 
 # Page configuration
 st.set_page_config(
@@ -497,6 +544,198 @@ def get_geometry_coordinates(geometry):
     except Exception as e:
         st.error(f"Error getting coordinates: {str(e)}")
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
+
+# VEGETATION INDICES FUNCTIONS
+def mask_clouds(image):
+    """Mask clouds in Sentinel-2 imagery"""
+    try:
+        # Sentinel-2 cloud masking
+        qa = image.select('QA60')
+        cloud_bitmask = 1 << 10
+        cirrus_bitmask = 1 << 11
+        mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(
+            qa.bitwiseAnd(cirrus_bitmask).eq(0))
+        return image.updateMask(mask)
+    except Exception as e:
+        st.error(f"Error in cloud masking: {str(e)}")
+        return image
+
+def add_vegetation_indices(image):
+    """Add ALL vegetation indices to an image"""
+    try:
+        # Define band names based on collection
+        if 'SR_B2' in image.bandNames().getInfo():  # Landsat
+            blue = image.select('SR_B2')
+            green = image.select('SR_B3')
+            red = image.select('SR_B4')
+            nir = image.select('SR_B5')
+            swir1 = image.select('SR_B6')
+            swir2 = image.select('SR_B7')
+        else:  # Sentinel-2
+            blue = image.select('B2')
+            green = image.select('B3')
+            red = image.select('B4')
+            red_edge1 = image.select('B5')
+            red_edge2 = image.select('B6')
+            red_edge3 = image.select('B7')
+            nir = image.select('B8')
+            nir_narrow = image.select('B8A')
+            swir1 = image.select('B11')
+            swir2 = image.select('B12')
+        
+        # Store all indices
+        indices = []
+        
+        # 1. NDVI - Normalized Difference Vegetation Index
+        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+        indices.append(ndvi)
+        
+        # 2. EVI - Enhanced Vegetation Index
+        evi = image.expression(
+            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
+            {'NIR': nir, 'RED': red, 'BLUE': blue}
+        ).rename('EVI')
+        indices.append(evi)
+        
+        # 3. SAVI - Soil Adjusted Vegetation Index
+        savi = image.expression(
+            '((NIR - RED) / (NIR + RED + 0.5)) * 1.5',
+            {'NIR': nir, 'RED': red}
+        ).rename('SAVI')
+        indices.append(savi)
+        
+        # 4. NDWI - Normalized Difference Water Index
+        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+        indices.append(ndwi)
+        
+        # 5. GNDVI - Green NDVI
+        gndvi = nir.subtract(green).divide(nir.add(green)).rename('GNDVI')
+        indices.append(gndvi)
+        
+        # 6. MSAVI - Modified Soil Adjusted Vegetation Index
+        msavi = image.expression(
+            '(2 * NIR + 1 - sqrt(pow((2 * NIR + 1), 2) - 8 * (NIR - RED))) / 2',
+            {'NIR': nir, 'RED': red}
+        ).rename('MSAVI')
+        indices.append(msavi)
+        
+        # 7. ARVI - Atmospherically Resistant Vegetation Index
+        arvi = image.expression(
+            '(NIR - (2 * RED - BLUE)) / (NIR + (2 * RED - BLUE))',
+            {'NIR': nir, 'RED': red, 'BLUE': blue}
+        ).rename('ARVI')
+        indices.append(arvi)
+        
+        # 8. EVI2 - 2-band Enhanced Vegetation Index
+        evi2 = image.expression(
+            '2.5 * (NIR - RED) / (NIR + 2.4 * RED + 1)',
+            {'NIR': nir, 'RED': red}
+        ).rename('EVI2')
+        indices.append(evi2)
+        
+        # 9. OSAVI - Optimized Soil Adjusted Vegetation Index
+        osavi = image.expression(
+            '1.16 * (NIR - RED) / (NIR + RED + 0.16)',
+            {'NIR': nir, 'RED': red}
+        ).rename('OSAVI')
+        indices.append(osavi)
+        
+        # 10. NDMI - Normalized Difference Moisture Index
+        ndmi = nir.subtract(swir1).divide(nir.add(swir1)).rename('NDMI')
+        indices.append(ndmi)
+        
+        # 11. MNDWI - Modified NDWI
+        mndwi = green.subtract(swir1).divide(green.add(swir1)).rename('MNDWI')
+        indices.append(mndwi)
+        
+        # 12. VARI - Visible Atmospherically Resistant Index
+        vari = image.expression(
+            '(GREEN - RED) / (GREEN + RED - BLUE)',
+            {'GREEN': green, 'RED': red, 'BLUE': blue}
+        ).rename('VARI')
+        indices.append(vari)
+        
+        # 13. TVI - Transformed Vegetation Index
+        tvi = image.expression(
+            'sqrt((NIR - RED) / (NIR + RED) + 0.5)',
+            {'NIR': nir, 'RED': red}
+        ).rename('TVI')
+        indices.append(tvi)
+        
+        # 14. GCVI - Green Chlorophyll Vegetation Index
+        gcvi = image.expression(
+            '(NIR / GREEN) - 1',
+            {'NIR': nir, 'GREEN': green}
+        ).rename('GCVI')
+        indices.append(gcvi)
+        
+        # 15. NBR - Normalized Burn Ratio
+        nbr = nir.subtract(swir2).divide(nir.add(swir2)).rename('NBR')
+        indices.append(nbr)
+        
+        # 16. CVI - Chlorophyll Vegetation Index
+        cvi = image.expression(
+            'NIR * (RED / pow(GREEN, 2))',
+            {'NIR': nir, 'RED': red, 'GREEN': green}
+        ).rename('CVI')
+        indices.append(cvi)
+        
+        # 17. RI - Redness Index
+        ri = image.expression(
+            'RED / GREEN',
+            {'RED': red, 'GREEN': green}
+        ).rename('RI')
+        indices.append(ri)
+        
+        # 18. CI - Coloration Index
+        ci = image.expression(
+            '(RED - GREEN) / (RED + GREEN)',
+            {'RED': red, 'GREEN': green}
+        ).rename('CI')
+        indices.append(ci)
+        
+        # 19. BI - Brightness Index
+        bi = image.expression(
+            'sqrt(pow(GREEN, 2) + pow(RED, 2))',
+            {'GREEN': green, 'RED': red}
+        ).rename('BI')
+        indices.append(bi)
+        
+        # 20. SI - Soil Index
+        si = image.expression(
+            '(RED - BLUE) / (RED + BLUE)',
+            {'RED': red, 'BLUE': blue}
+        ).rename('SI')
+        indices.append(si)
+        
+        return image.addBands(indices)
+        
+    except Exception as e:
+        st.error(f"Error adding vegetation indices: {str(e)}")
+        return image
+
+# Map Style Toggle
+col_toggle1, col_toggle2, col_toggle3 = st.columns([1, 2, 1])
+with col_toggle2:
+    st.markdown('<div class="view-toggle">', unsafe_allow_html=True)
+    col_a, col_b, col_c, col_d = st.columns(4)
+    with col_a:
+        if st.button("🛰️ Satellite", use_container_width=True, key="satellite_btn"):
+            st.session_state.map_style = "satellite"
+            st.rerun()
+    with col_b:
+        if st.button("🗺️ Streets", use_container_width=True, key="streets_btn"):
+            st.session_state.map_style = "street"
+            st.rerun()
+    with col_c:
+        if st.button("🏔️ Terrain", use_container_width=True, key="terrain_btn"):
+            st.session_state.map_style = "terrain"
+            st.rerun()
+    with col_d:
+        if st.button("🌙 Dark", use_container_width=True, key="dark_btn"):
+            st.session_state.map_style = "dark"
+            st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Create main layout containers
 col1, col2 = st.columns([0.25, 0.75], gap="large")
@@ -651,15 +890,55 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
         
-        available_indices = ['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI']
+        # ALL vegetation indices available
+        available_indices = [
+            'NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI', 'ARVI', 'EVI2', 'OSAVI', 
+            'NDMI', 'MNDWI', 'VARI', 'TVI', 'GCVI', 'NBR', 'CVI', 'RI', 'CI', 'BI', 'SI'
+        ]
         
         selected_indices = st.multiselect(
             "Select Indices",
             options=available_indices,
-            default=['NDVI', 'EVI', 'SAVI', 'NDWI'],
+            default=['NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI'],
             help="Choose vegetation indices to analyze",
             key="indices_select"
         )
+        
+        col_c, col_d = st.columns(2)
+        with col_c:
+            if st.button("Select All", use_container_width=True, key="select_all"):
+                selected_indices = available_indices
+                st.rerun()
+        with col_d:
+            if st.button("Clear All", use_container_width=True, key="clear_all"):
+                selected_indices = []
+                st.rerun()
+                
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Quick Navigation Card
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Quick Navigation</h3></div>', unsafe_allow_html=True)
+        
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            if st.button("🇺🇸 USA", use_container_width=True, key="usa_btn"):
+                st.session_state.fly_to_region = "usa"
+                st.rerun()
+            if st.button("🇪🇺 Europe", use_container_width=True, key="europe_btn"):
+                st.session_state.fly_to_region = "europe"
+                st.rerun()
+        with col_g2:
+            if st.button("🇨🇳 Asia", use_container_width=True, key="asia_btn"):
+                st.session_state.fly_to_region = "asia"
+                st.rerun()
+            if st.button("🇧🇷 Americas", use_container_width=True, key="americas_btn"):
+                st.session_state.fly_to_region = "americas"
+                st.rerun()
+        
+        if st.button("🌐 Reset View", use_container_width=True, key="reset_btn"):
+            st.session_state.fly_to_region = "reset"
+            st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -683,9 +962,14 @@ with col1:
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
-                        # Add vegetation indices
-                        from vegetation_indices import add_vegetation_indices
-                        processed_collection = filtered_collection.map(add_vegetation_indices)
+                        # Apply cloud masking and add vegetation indices
+                        if collection_choice == "Sentinel-2":
+                            processed_collection = (filtered_collection
+                                .map(mask_clouds)
+                                .map(add_vegetation_indices)
+                            )
+                        else:
+                            processed_collection = filtered_collection.map(add_vegetation_indices)
                         
                         # Calculate time series for selected indices
                         results = {}
@@ -740,6 +1024,16 @@ with col2:
         map_center = st.session_state.selected_coordinates['center']
         map_zoom = st.session_state.selected_coordinates['zoom']
         bounds_data = st.session_state.selected_coordinates['bounds']
+    
+    # Map style mapping
+    map_styles = {
+        "satellite": "mapbox://styles/mapbox/satellite-streets-v12",
+        "street": "mapbox://styles/mapbox/streets-v12",
+        "terrain": "mapbox://styles/mapbox/outdoors-v12",
+        "dark": "mapbox://styles/mapbox/dark-v11"
+    }
+    
+    current_style = map_styles[st.session_state.map_style]
     
     # Generate HTML for Mapbox interactive globe
     mapbox_html = f"""
@@ -825,6 +1119,41 @@ with col2:
           font-size: 12px;
           line-height: 1.4;
         }}
+        .mapboxgl-popup {{
+          max-width: 300px;
+        }}
+        .mapboxgl-popup-content {{
+          background: #0a0a0a;
+          color: #ffffff;
+          border: 1px solid #222222;
+          border-radius: 8px;
+          padding: 15px;
+          font-family: 'Inter', sans-serif;
+        }}
+        .mapboxgl-popup-content h3 {{
+          color: #00ff88;
+          margin: 0 0 10px 0;
+          font-size: 16px;
+        }}
+        .mapboxgl-popup-content p {{
+          margin: 0;
+          color: #cccccc;
+          font-size: 14px;
+        }}
+        .city-marker {{
+          background-color: #ffaa00;
+          width: 15px;
+          height: 15px;
+          border-radius: 50%;
+          border: 2px solid #ffffff;
+          box-shadow: 0 0 10px rgba(255, 170, 0, 0.5);
+          cursor: pointer;
+          transition: all 0.3s;
+        }}
+        .city-marker:hover {{
+          transform: scale(1.3);
+          box-shadow: 0 0 15px rgba(255, 170, 0, 0.8);
+        }}
       </style>
     </head>
     <body>
@@ -863,7 +1192,7 @@ with col2:
         // Create a new map instance
         const map = new mapboxgl.Map({{
           container: 'map',
-          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          style: '{current_style}',
           center: {map_center},
           zoom: {map_zoom},
           pitch: 45,
@@ -947,27 +1276,26 @@ with col2:
           }}
           ''' if bounds_data else ''}
 
-          // Add some sample cities for interaction
+          // Add major cities with interactive markers
           const cities = [
-            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
-            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
-            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
-            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
-            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital of the world' }},
+            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical and cultural capital' }},
+            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis with advanced technology' }},
+            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Major harbor city with iconic opera house' }},
+            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Ancient city on the Nile Delta' }},
+            {{ name: 'Rio de Janeiro', coordinates: [-43.1729, -22.9068], country: 'Brazil', info: 'Famous for Carnival and beaches' }},
+            {{ name: 'Moscow', coordinates: [37.6173, 55.7558], country: 'Russia', info: 'Historic city with Red Square' }},
+            {{ name: 'Dubai', coordinates: [55.2708, 25.2048], country: 'UAE', info: 'Modern metropolis in the desert' }},
+            {{ name: 'Singapore', coordinates: [103.8198, 1.3521], country: 'Singapore', info: 'Garden city and financial hub' }},
+            {{ name: 'Cape Town', coordinates: [18.4241, -33.9249], country: 'South Africa', info: 'Coastal city with Table Mountain' }}
           ];
 
-          // Add city markers
+          // Add city markers with fly-to animation
           cities.forEach(city => {{
             // Create a custom marker element
             const el = document.createElement('div');
-            el.className = 'marker';
-            el.style.backgroundColor = '#ffaa00';
-            el.style.width = '15px';
-            el.style.height = '15px';
-            el.style.borderRadius = '50%';
-            el.style.border = '2px solid #ffffff';
-            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
-            el.style.cursor = 'pointer';
+            el.className = 'city-marker';
+            el.title = city.name;
 
             // Create a popup
             const popup = new mapboxgl.Popup({{
@@ -975,16 +1303,76 @@ with col2:
               closeButton: true,
               closeOnClick: false
             }}).setHTML(
-              `<h3>${{city.name}}</h3>
-               <p><strong>Country:</strong> ${{city.country}}</p>
-               <p>${{city.info}}</p>`
+              `<h3>{city.name}</h3>
+               <p><strong>Country:</strong> {city.country}</p>
+               <p>{city.info}</p>
+               <p><strong>Coordinates:</strong><br>
+               Lat: {city.coordinates[1].toFixed(4)}°<br>
+               Lon: {city.coordinates[0].toFixed(4)}°</p>`
             );
 
             // Create marker
-            new mapboxgl.Marker(el)
+            const marker = new mapboxgl.Marker(el)
               .setLngLat(city.coordinates)
               .setPopup(popup)
               .addTo(map);
+
+            // Add click event for fly-to animation
+            el.addEventListener('click', (e) => {{
+              e.stopPropagation();
+              
+              // First fly out to zoom all the way out
+              map.flyTo({{
+                center: city.coordinates,
+                zoom: 1,
+                speed: 1,
+                curve: 1.6,
+                easing: (t) => t,
+                essential: true
+              }});
+
+              // Once the first flyTo is done, zoom back into the marker
+              map.once('moveend', () => {{
+                map.flyTo({{
+                  center: city.coordinates,
+                  zoom: 10,
+                  speed: 0.8,
+                  curve: 0.8,
+                  easing: (t) => t * (2 - t),
+                  essential: true
+                }});
+              }});
+
+              // Open the popup
+              popup.addTo(map);
+            }});
+          }});
+
+          // Handle region fly from Streamlit
+          const regions = {{
+            usa: {{ center: [-95.7129, 37.0902], zoom: 3 }},
+            europe: {{ center: [15.2551, 54.5260], zoom: 3 }},
+            asia: {{ center: [104.1954, 35.8617], zoom: 2 }},
+            americas: {{ center: [-58.3816, -14.2350], zoom: 2 }},
+            reset: {{ center: [0, 20], zoom: 2 }}
+          }};
+
+          // Listen for messages from Streamlit to fly to regions
+          window.addEventListener('message', (event) => {{
+            if (event.data && event.data.type === 'FLY_TO_REGION') {{
+              const region = event.data.region;
+              if (regions[region]) {{
+                const {{ center, zoom }} = regions[region];
+                
+                // Fly to region with animation
+                map.flyTo({{
+                  center: center,
+                  zoom: zoom,
+                  duration: 2000,
+                  essential: true
+                }});
+              }}
+            }}
           }});
         }});
       </script>
@@ -994,6 +1382,20 @@ with col2:
     
     # Display the Mapbox HTML
     st.components.v1.html(mapbox_html, height=550)
+    
+    # Handle region navigation from Streamlit
+    if 'fly_to_region' in st.session_state and st.session_state.fly_to_region:
+        region = st.session_state.fly_to_region
+        st.markdown(f"""
+        <script>
+            window.parent.postMessage({{
+                type: 'FLY_TO_REGION',
+                region: '{region}'
+            }}, '*');
+        </script>
+        """, unsafe_allow_html=True)
+        # Clear after sending
+        st.session_state.fly_to_region = None
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1033,63 +1435,189 @@ with col2:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
             
-            for index, data in results.items():
-                if data['dates'] and data['values']:
-                    try:
-                        # Parse dates
-                        dates = []
-                        for date_str in data['dates']:
-                            try:
-                                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                                dates.append(date_obj)
-                            except:
-                                continue
-                        
-                        values = [v for v in data['values'] if v is not None]
-                        
-                        if dates and values and len(dates) == len(values):
-                            df = pd.DataFrame({'Date': dates, 'Value': values})
-                            df = df.sort_values('Date')
+            # Chart controls
+            col_x, col_y = st.columns([3, 1])
+            with col_x:
+                indices_to_plot = st.multiselect(
+                    "Select Indices to Plot",
+                    options=list(results.keys()),
+                    default=list(results.keys())[:4] if len(results) >= 4 else list(results.keys()),
+                    help="Choose vegetation indices to plot",
+                    key="chart_indices"
+                )
+            with col_y:
+                chart_style = st.selectbox(
+                    "Chart Style",
+                    ["Professional", "Statistical", "Area"],
+                    help="Select chart visualization style",
+                    key="chart_style"
+                )
+            
+            # Generate charts
+            if indices_to_plot:
+                for index in indices_to_plot:
+                    data = results[index]
+                    if data['dates'] and data['values']:
+                        try:
+                            # Parse dates
+                            dates = []
+                            for date_str in data['dates']:
+                                try:
+                                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                    dates.append(date_obj)
+                                except:
+                                    continue
                             
-                            # Create chart
-                            fig = go.Figure()
+                            values = [v for v in data['values'] if v is not None]
                             
-                            fig.add_trace(go.Scatter(
-                                x=df['Date'], 
-                                y=df['Value'],
-                                mode='lines+markers',
-                                name=f'{index} Index',
-                                line=dict(color='#00ff88', width=3),
-                                marker=dict(size=6),
-                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
-                            ))
-                            
-                            fig.update_layout(
-                                title=f'{index} - Vegetation Analysis',
-                                plot_bgcolor='#0a0a0a',
-                                paper_bgcolor='#0a0a0a',
-                                font=dict(color='#ffffff'),
-                                xaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff'
-                                ),
-                                yaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff'
-                                ),
-                                hovermode='x unified',
-                                height=300,
-                                margin=dict(t=50, b=50, l=50, r=50)
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                    except Exception as e:
-                        st.error(f"Error creating chart for {index}: {str(e)}")
+                            if dates and values and len(dates) == len(values):
+                                df = pd.DataFrame({'Date': dates, 'Value': values})
+                                df = df.sort_values('Date')
+                                
+                                # Calculate analytical metrics
+                                df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
+                                df['MA_10'] = df['Value'].rolling(window=min(10, len(df))).mean()
+                                
+                                # Create chart
+                                fig = go.Figure()
+                                
+                                current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
+                                prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
+                                is_increasing = current_value >= prev_value
+                                
+                                if chart_style == "Professional":
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        mode='lines',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
+                                        hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                                    ))
+                                elif chart_style == "Statistical":
+                                    df['Upper_Bound'] = df['Value'] * 1.05
+                                    df['Lower_Bound'] = df['Value'] * 0.95
+                                    
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Upper_Bound'],
+                                        mode='lines',
+                                        line=dict(width=0),
+                                        showlegend=False,
+                                        hoverinfo='skip'
+                                    ))
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Lower_Bound'],
+                                        mode='lines',
+                                        line=dict(width=0),
+                                        fill='tonexty',
+                                        fillcolor='rgba(0,255,136,0.1)',
+                                        name='Confidence Band',
+                                        hoverinfo='skip'
+                                    ))
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        mode='lines+markers',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88', width=2),
+                                        marker=dict(size=4)
+                                    ))
+                                elif chart_style == "Area":
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['Value'],
+                                        fill='tozeroy',
+                                        mode='lines',
+                                        name=f'{index} Index',
+                                        line=dict(color='#00ff88' if is_increasing else '#ff4444', width=2),
+                                        fillcolor=f"rgba({'0,255,136' if is_increasing else '255,68,68'}, 0.3)"
+                                    ))
+                                
+                                # Add moving averages
+                                if len(df) >= 5:
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['MA_5'],
+                                        mode='lines',
+                                        name='MA 5-day',
+                                        line=dict(color='#ffaa00', width=1, dash='dot'),
+                                        opacity=0.7
+                                    ))
+                                
+                                if len(df) >= 10:
+                                    fig.add_trace(go.Scatter(
+                                        x=df['Date'], 
+                                        y=df['MA_10'],
+                                        mode='lines',
+                                        name='MA 10-day',
+                                        line=dict(color='#aa00ff', width=1, dash='dash'),
+                                        opacity=0.7
+                                    ))
+                                
+                                # Update layout
+                                fig.update_layout(
+                                    title=f'{index} - Vegetation Analysis',
+                                    plot_bgcolor='#0a0a0a',
+                                    paper_bgcolor='#0a0a0a',
+                                    font=dict(color='#ffffff'),
+                                    xaxis=dict(
+                                        gridcolor='#222222',
+                                        zerolinecolor='#222222',
+                                        tickcolor='#444444',
+                                        title_font_color='#ffffff'
+                                    ),
+                                    yaxis=dict(
+                                        gridcolor='#222222',
+                                        zerolinecolor='#222222',
+                                        tilecolor='#444444',
+                                        title_font_color='#ffffff'
+                                    ),
+                                    legend=dict(
+                                        bgcolor='rgba(0,0,0,0.5)',
+                                        bordercolor='#222222',
+                                        borderwidth=1
+                                    ),
+                                    hovermode='x unified',
+                                    height=350,
+                                    margin=dict(t=50, b=50, l=50, r=50)
+                                )
+                                
+                                # Display chart
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                        except Exception as e:
+                            st.error(f"Error creating chart for {index}: {str(e)}")
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Export Section
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Data Export</h3></div>', unsafe_allow_html=True)
+            
+            if st.button("📥 Download Results as CSV", type="primary", use_container_width=True, key="export_csv"):
+                export_data = []
+                for index, data in results.items():
+                    for date, value in zip(data['dates'], data['values']):
+                        if value is not None:
+                            export_data.append({
+                                'Date': date,
+                                'Index': index,
+                                'Value': value
+                            })
+                
+                if export_data:
+                    export_df = pd.DataFrame(export_data)
+                    csv = export_df.to_csv(index=False)
+                    
+                    st.download_button(
+                        label="Download CSV File",
+                        data=csv,
+                        file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.warning("No data available for export")
             st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
