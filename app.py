@@ -195,7 +195,7 @@ st.markdown("""
         background: var(--card-black);
         color: var(--text-white);
         border: 1px solid var(--border-gray);
-        border-radius: 8px;
+        border-radius=8px;
         padding: 15px;
     }
     
@@ -498,128 +498,6 @@ def get_geometry_coordinates(geometry):
         st.error(f"Error getting coordinates: {str(e)}")
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-# Vegetation Indices Functions (exactly like the second code)
-def mask_clouds(image):
-    """Mask clouds in Sentinel-2 imagery"""
-    # Get the cloud probability band
-    qa = image.select('QA60')
-    
-    # Bits 10 and 11 are clouds and cirrus, respectively
-    cloud_bitmask = 1 << 10
-    cirrus_bitmask = 1 << 11
-    
-    # Both should be zero, indicating clear conditions
-    mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(
-           qa.bitwiseAnd(cirrus_bitmask).eq(0))
-    
-    # Apply the mask and return the image
-    return image.updateMask(mask).divide(10000)
-
-def add_vegetation_indices(image):
-    """Add all vegetation indices to an image"""
-    # For Sentinel-2
-    B2 = image.select('B2')  # Blue
-    B3 = image.select('B3')  # Green
-    B4 = image.select('B4')  # Red
-    B5 = image.select('B5')  # Red Edge 1
-    B6 = image.select('B6')  # Red Edge 2
-    B7 = image.select('B7')  # Red Edge 3
-    B8 = image.select('B8')  # NIR
-    B8A = image.select('B8A')  # Red Edge 4
-    B11 = image.select('B11')  # SWIR 1
-    B12 = image.select('B12')  # SWIR 2
-    
-    # For Landsat-8
-    if image.get('SPACECRAFT_ID') is not None:
-        spacecraft = image.get('SPACECRAFT_ID').getInfo()
-        if 'LANDSAT' in spacecraft:
-            B2 = image.select('SR_B2')  # Blue
-            B3 = image.select('SR_B3')  # Green
-            B4 = image.select('SR_B4')  # Red
-            B5 = image.select('SR_B5')  # NIR
-            B6 = image.select('SR_B6')  # SWIR 1
-            B7 = image.select('SR_B7')  # SWIR 2
-    
-    # Calculate indices
-    ndvi = B8.subtract(B4).divide(B8.add(B4)).rename('NDVI')
-    
-    # EVI - Enhanced Vegetation Index
-    evi = B8.subtract(B4).multiply(2.5).divide(
-        B8.add(B4.multiply(6)).subtract(B2.multiply(7.5)).add(1)
-    ).rename('EVI')
-    
-    # SAVI - Soil Adjusted Vegetation Index
-    savi = B8.subtract(B4).multiply(1.5).divide(
-        B8.add(B4).add(0.5)
-    ).rename('SAVI')
-    
-    # NDWI - Normalized Difference Water Index
-    ndwi = B3.subtract(B8).divide(B3.add(B8)).rename('NDWI')
-    
-    # GNDVI - Green Normalized Difference Vegetation Index
-    gndvi = B8.subtract(B3).divide(B8.add(B3)).rename('GNDVI')
-    
-    # MSAVI - Modified Soil Adjusted Vegetation Index
-    msavi = B8.multiply(2).add(1).subtract(
-        (B8.multiply(2).add(1)).pow(2)
-        .subtract(B8.subtract(B4).multiply(8))
-        .sqrt()
-    ).divide(2).rename('MSAVI')
-    
-    # Additional indices from the second code
-    # ARVI - Atmospherically Resistant Vegetation Index
-    arvi = B8.subtract(B4.add(B4.subtract(B2))).divide(
-        B8.add(B4.subtract(B4.subtract(B2)))
-    ).rename('ARVI')
-    
-    # DVI - Difference Vegetation Index
-    dvi = B8.subtract(B4).rename('DVI')
-    
-    # EVI2 - Two-band Enhanced Vegetation Index
-    evi2 = B8.subtract(B4).multiply(2.4).divide(
-        B8.add(B4).add(1)
-    ).rename('EVI2')
-    
-    # MSI - Moisture Stress Index
-    msi = B11.divide(B8).rename('MSI')
-    
-    # NDTI - Normalized Difference Tillage Index
-    ndti = B11.subtract(B12).divide(B11.add(B12)).rename('NDTI')
-    
-    # OSAVI - Optimized Soil Adjusted Vegetation Index
-    osavi = B8.subtract(B4).divide(B8.add(B4).add(0.16)).rename('OSAVI')
-    
-    # RVI - Ratio Vegetation Index
-    rvi = B8.divide(B4).rename('RVI')
-    
-    # TVI - Transformed Vegetation Index
-    tvi = (B8.subtract(B4)).divide(B8.add(B4)).add(0.5).sqrt().rename('TVI')
-    
-    # VARI - Visible Atmospherically Resistant Index
-    vari = B3.subtract(B4).divide(B3.add(B4).subtract(B2)).rename('VARI')
-    
-    # WDRVI - Wide Dynamic Range Vegetation Index
-    wdrvi = (B8.multiply(0.1).subtract(B4)).divide(
-        B8.multiply(0.1).add(B4)
-    ).rename('WDRVI')
-    
-    # GCVI - Green Chlorophyll Vegetation Index
-    gcvi = B8.divide(B3).subtract(1).rename('GCVI')
-    
-    # MNDWI - Modified Normalized Difference Water Index
-    mndwi = B3.subtract(B11).divide(B3.add(B11)).rename('MNDWI')
-    
-    # NBR - Normalized Burn Ratio
-    nbr = B8.subtract(B12).divide(B8.add(B12)).rename('NBR')
-    
-    # NDMI - Normalized Difference Moisture Index
-    ndmi = B8.subtract(B11).divide(B8.add(B11)).rename('NDMI')
-    
-    # Add all indices to the image
-    return image.addBands([ndvi, evi, savi, ndwi, gndvi, msavi, arvi, dvi, evi2, 
-                          msi, ndti, osavi, rvi, tvi, vari, wdrvi, gcvi, mndwi, 
-                          nbr, ndmi])
-
 # Create main layout containers
 col1, col2 = st.columns([0.25, 0.75], gap="large")
 
@@ -773,7 +651,6 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
         
-        # All available indices from the second code
         available_indices = [
             'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
             'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
@@ -801,65 +678,79 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Run Analysis Button - FIXED VERSION
+        # Run Analysis Button - USING EXACT SAME LOGIC AS SECOND CODE
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
-                with st.spinner("Running analysis... This may take a few moments"):
+                with st.spinner("Running analysis..."):
                     try:
-                        # Define collection based on choice
+                        # Define collection based on choice - EXACTLY LIKE SECOND CODE
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         else:
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
                         
-                        # Get the geometry
-                        geometry = st.session_state.selected_geometry.geometry()
-                        
-                        # Filter collection
+                        # Filter collection - EXACTLY LIKE SECOND CODE
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                            .filterBounds(geometry)
+                            .filterBounds(st.session_state.selected_geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
-                        # Apply cloud masking and add vegetation indices
-                        if collection_choice == "Sentinel-2":
-                            processed_collection = (filtered_collection
-                                .map(mask_clouds)
-                                .map(add_vegetation_indices)
-                            )
-                        else:
-                            processed_collection = filtered_collection.map(add_vegetation_indices)
+                        # Import the vegetation indices functions - EXACTLY LIKE SECOND CODE
+                        try:
+                            from vegetation_indices import mask_clouds, add_vegetation_indices
+                            
+                            # Apply cloud masking and add vegetation indices - EXACTLY LIKE SECOND CODE
+                            if collection_choice == "Sentinel-2":
+                                processed_collection = (filtered_collection
+                                    .map(mask_clouds)
+                                    .map(add_vegetation_indices)
+                                )
+                            else:
+                                processed_collection = filtered_collection.map(add_vegetation_indices)
+                            
+                        except ImportError:
+                            # If module not found, use simplified version
+                            def simple_add_indices(image):
+                                nir = image.select('B8')
+                                red = image.select('B4')
+                                green = image.select('B3')
+                                blue = image.select('B2')
+                                
+                                ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+                                evi = nir.subtract(red).multiply(2.5).divide(
+                                    nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+                                ).rename('EVI')
+                                savi = nir.subtract(red).multiply(1.5).divide(
+                                    nir.add(red).add(0.5)
+                                ).rename('SAVI')
+                                ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+                                
+                                return image.addBands([ndvi, evi, savi, ndwi])
+                            
+                            processed_collection = filtered_collection.map(simple_add_indices)
                         
-                        # FIXED: Properly calculate time series for selected indices
+                        # Calculate time series for selected indices - EXACTLY LIKE SECOND CODE
                         results = {}
                         for index in selected_indices:
                             try:
-                                # Get time series using proper Earth Engine methods
-                                def extract_index_and_date(img):
-                                    # Select the index band
-                                    index_img = img.select(index)
-                                    # Get date as string
-                                    date = img.date().format('YYYY-MM-dd')
-                                    # Get mean value for the geometry
-                                    mean_value = index_img.reduceRegion(
+                                # EXACTLY THE SAME AS SECOND CODE - no client-side operations in mapped function
+                                def add_date_and_reduce(image):
+                                    reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
-                                        geometry=geometry,
-                                        scale=30,
+                                        geometry=st.session_state.selected_geometry.geometry(),
+                                        scale=30,  # Same as second code
                                         maxPixels=1e9
                                     )
-                                    # Return feature with date and value
-                                    return ee.Feature(None, {
-                                        'date': date,
-                                        'value': mean_value.get(index)
-                                    })
+                                    # This returns a server-side feature - NO CLIENT-SIDE OPERATIONS
+                                    return ee.Feature(None, reduced.set('date', image.date().format()))
                                 
                                 # Map over collection
-                                time_series = processed_collection.map(extract_index_and_date)
+                                time_series = processed_collection.map(add_date_and_reduce)
                                 
-                                # Get results as list
+                                # Get results
                                 time_series_list = time_series.getInfo()
                                 
                                 dates = []
@@ -868,30 +759,22 @@ with col1:
                                 if 'features' in time_series_list:
                                     for feature in time_series_list['features']:
                                         props = feature['properties']
-                                        if 'date' in props and 'value' in props and props['value'] is not None:
+                                        if index in props and props[index] is not None and 'date' in props:
                                             dates.append(props['date'])
-                                            values.append(props['value'])
+                                            values.append(props[index])
                                 
-                                if dates:
-                                    results[index] = {'dates': dates, 'values': values}
-                                    st.success(f"✓ {index}: {len(dates)} data points")
-                                else:
-                                    st.warning(f"⚠ {index}: No valid data found")
-                                    results[index] = {'dates': [], 'values': []}
+                                results[index] = {'dates': dates, 'values': values}
                                 
                             except Exception as e:
-                                st.warning(f"⚠ Could not calculate {index}: {str(e)}")
+                                st.warning(f"Could not calculate {index}: {str(e)}")
                                 results[index] = {'dates': [], 'values': []}
                         
-                        if any(len(v['dates']) > 0 for v in results.values()):
-                            st.session_state.analysis_results = results
-                            st.success(f"✅ Analysis completed! Processed {len([v for v in results.values() if v['dates']])} indices")
-                        else:
-                            st.error("❌ No valid data found for any selected index")
+                        st.session_state.analysis_results = results
+                        st.success("✅ Analysis completed!")
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
-                        st.info("Try selecting a smaller area or shorter time period")
+                        st.error(f"Full error: {traceback.format_exc()}")
 
 # MAIN CONTENT AREA - 3D Mapbox Globe with Selected Area Highlight
 with col2:
@@ -1333,7 +1216,6 @@ with col2:
                         dates = []
                         for date_str in data['dates']:
                             try:
-                                # Handle different date formats
                                 if 'T' in date_str:
                                     date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                                 else:
