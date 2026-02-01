@@ -17,7 +17,7 @@ from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 import requests
-
+pip install google-auth-oauthlib requests
 # Your OAuth credentials from the JSON file
 CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
 CLIENT_SECRET = "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"
