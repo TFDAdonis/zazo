@@ -12,145 +12,6 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-import base64
-
-# ============================================
-# EARTH ENGINE HELPER FUNCTIONS - ADD THESE
-# ============================================
-
-def get_admin_boundaries(level, country_code=None, admin1_code=None):
-    """
-    Get administrative boundaries from Earth Engine
-    
-    Parameters:
-    - level: 0 for country, 1 for admin1, 2 for admin2
-    - country_code: ADM0_CODE for filtering
-    - admin1_code: ADM1_CODE for filtering
-    
-    Returns:
-    - ee.FeatureCollection of boundaries
-    """
-    try:
-        # Load FAO GAUL dataset
-        gaul = ee.FeatureCollection("FAO/GAUL/2015/level0")
-        
-        if level == 0:
-            return gaul
-        
-        elif level == 1:
-            admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
-            if country_code:
-                return admin1.filter(ee.Filter.eq('ADM0_CODE', country_code))
-            return admin1
-        
-        elif level == 2:
-            admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
-            if admin1_code:
-                return admin2.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
-            elif country_code:
-                return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
-            return admin2
-        
-    except Exception as e:
-        st.error(f"Error loading boundaries: {str(e)}")
-        return None
-
-def get_boundary_names(feature_collection, level):
-    """
-    Extract boundary names from Earth Engine FeatureCollection
-    
-    Parameters:
-    - feature_collection: ee.FeatureCollection
-    - level: 0, 1, or 2
-    
-    Returns:
-    - List of boundary names
-    """
-    try:
-        if level == 0:
-            names = feature_collection.aggregate_array('ADM0_NAME').distinct()
-        elif level == 1:
-            names = feature_collection.aggregate_array('ADM1_NAME').distinct()
-        elif level == 2:
-            names = feature_collection.aggregate_array('ADM2_NAME').distinct()
-        else:
-            return []
-        
-        # Sort the names alphabetically
-        names_list = names.getInfo()
-        if names_list:
-            return sorted(names_list)
-        return []
-        
-    except Exception as e:
-        st.error(f"Error extracting names: {str(e)}")
-        return []
-
-def mask_clouds(image):
-    """
-    Mask clouds in Sentinel-2 imagery
-    """
-    try:
-        # Sentinel-2 cloud masking
-        qa = image.select('QA60')
-        cloud_bitmask = 1 << 10
-        cirrus_bitmask = 1 << 11
-        mask = qa.bitwiseAnd(cloud_bitmask).eq(0).And(
-            qa.bitwiseAnd(cirrus_bitmask).eq(0))
-        return image.updateMask(mask)
-    except Exception as e:
-        st.error(f"Error in cloud masking: {str(e)}")
-        return image
-
-def add_vegetation_indices(image):
-    """
-    Add vegetation indices to an image
-    """
-    try:
-        # Define band names based on collection
-        if 'SR_B2' in image.bandNames().getInfo():  # Landsat
-            blue = image.select('SR_B2')
-            green = image.select('SR_B3')
-            red = image.select('SR_B4')
-            nir = image.select('SR_B5')
-            swir1 = image.select('SR_B6')
-        else:  # Sentinel-2
-            blue = image.select('B2')
-            green = image.select('B3')
-            red = image.select('B4')
-            nir = image.select('B8')
-            swir1 = image.select('B11')
-        
-        # Calculate NDVI
-        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
-        
-        # Calculate EVI
-        evi = image.expression(
-            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))',
-            {
-                'NIR': nir,
-                'RED': red,
-                'BLUE': blue
-            }
-        ).rename('EVI')
-        
-        # Calculate SAVI
-        savi = image.expression(
-            '((NIR - RED) / (NIR + RED + 0.5)) * 1.5',
-            {
-                'NIR': nir,
-                'RED': red
-            }
-        ).rename('SAVI')
-        
-        # Calculate NDWI
-        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
-        
-        return image.addBands([ndvi, evi, savi, ndwi])
-        
-    except Exception as e:
-        st.error(f"Error adding vegetation indices: {str(e)}")
-        return image
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -301,35 +162,6 @@ st.markdown("""
         box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2) !important;
     }
     
-    /* Checkboxes */
-    .stCheckbox > label {
-        color: var(--text-light-gray) !important;
-        font-weight: 500;
-        font-size: 14px;
-    }
-    
-    /* Sliders */
-    .stSlider > div > div > div {
-        background: linear-gradient(90deg, var(--primary-green), var(--accent-green)) !important;
-    }
-    
-    .stSlider > div > div > div > div {
-        background: var(--primary-green) !important;
-        border: 3px solid var(--primary-green) !important;
-    }
-    
-    /* Select boxes */
-    .stSelectbox > div > div {
-        background: var(--secondary-black) !important;
-        border: 1px solid var(--border-gray) !important;
-    }
-    
-    /* Multi-select */
-    .stMultiSelect > div > div > div {
-        background: var(--secondary-black) !important;
-        border: 1px solid var(--border-gray) !important;
-    }
-    
     /* Map container */
     .map-container {
         border: 1px solid var(--border-gray);
@@ -379,21 +211,6 @@ st.markdown("""
         font-size: 14px;
     }
     
-    .mapboxgl-popup-close-button {
-        color: var(--text-white);
-        font-size: 16px;
-        padding: 8px;
-    }
-    
-    .mapboxgl-ctrl-group {
-        background: var(--card-black) !important;
-        border: 1px solid var(--border-gray) !important;
-    }
-    
-    .mapboxgl-ctrl button {
-        background-color: transparent !important;
-    }
-    
     /* Status badges */
     .status-badge {
         display: inline-flex;
@@ -406,31 +223,6 @@ st.markdown("""
         font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.5px;
-    }
-    
-    /* Alert boxes */
-    .alert {
-        padding: 12px 16px;
-        border-radius: 8px;
-        margin: 10px 0;
-        border: 1px solid;
-        background: var(--card-black);
-        font-size: 14px;
-    }
-    
-    .alert-success {
-        border-color: rgba(0, 255, 136, 0.3);
-        color: var(--primary-green);
-    }
-    
-    .alert-warning {
-        border-color: rgba(255, 170, 0, 0.3);
-        color: #ffaa00;
-    }
-    
-    .alert-error {
-        border-color: rgba(255, 68, 68, 0.3);
-        color: #ff4444;
     }
     
     /* Info panel */
@@ -564,20 +356,18 @@ if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'ee_initialized' not in st.session_state:
     st.session_state.ee_initialized = False
-if 'credentials_uploaded' not in st.session_state:
-    st.session_state.credentials_uploaded = False
 if 'selected_geometry' not in st.session_state:
     st.session_state.selected_geometry = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-if 'map_view' not in st.session_state:
-    st.session_state.map_view = "satellite"
-if 'fly_to_region' not in st.session_state:
-    st.session_state.fly_to_region = None
+if 'selected_coordinates' not in st.session_state:
+    st.session_state.selected_coordinates = None
+if 'selected_area_name' not in st.session_state:
+    st.session_state.selected_area_name = None
 
 # Page configuration
 st.set_page_config(
-    page_title="Khisba GIS - Interactive Global Vegetation Analysis",
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
     page_icon="🌍",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -590,7 +380,7 @@ if not st.session_state.authenticated:
         <div class="content-container" style="max-width: 500px; margin: 100px auto;">
             <div class="card">
                 <h1 style="text-align: center; margin-bottom: 10px;">🌍 KHISBA GIS</h1>
-                <p style="text-align: center; color: #999999; margin-bottom: 30px;">Interactive Global Vegetation Analytics</p>
+                <p style="text-align: center; color: #999999; margin-bottom: 30px;">3D Global Vegetation Analytics</p>
                 
                 <div class="alert alert-warning" style="text-align: center;">
                     🔐 Authentication Required
@@ -630,38 +420,83 @@ st.markdown("""
 <div class="compact-header">
     <div>
         <h1>🌍 KHISBA GIS</h1>
-        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive Global Vegetation Indices Analytics</p>
+        <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
     </div>
     <div style="display: flex; gap: 10px;">
         <span class="status-badge">Connected</span>
-        <span class="status-badge">Interactive Globe</span>
+        <span class="status-badge">3D Mapbox Globe</span>
         <span class="status-badge">v2.0</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# Map Style Toggle
-col_toggle1, col_toggle2, col_toggle3 = st.columns([1, 2, 1])
-with col_toggle2:
-    st.markdown('<div class="view-toggle">', unsafe_allow_html=True)
-    col_a, col_b, col_c, col_d = st.columns(4)
-    with col_a:
-        if st.button("🛰️ Satellite", use_container_width=True, key="satellite_btn"):
-            st.session_state.map_view = "satellite"
-            st.rerun()
-    with col_b:
-        if st.button("🗺️ Streets", use_container_width=True, key="streets_btn"):
-            st.session_state.map_view = "street"
-            st.rerun()
-    with col_c:
-        if st.button("🏔️ Terrain", use_container_width=True, key="terrain_btn"):
-            st.session_state.map_view = "terrain"
-            st.rerun()
-    with col_d:
-        if st.button("🌙 Dark", use_container_width=True, key="dark_btn"):
-            st.session_state.map_view = "dark"
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+# Helper Functions for Earth Engine
+def get_admin_boundaries(level, country_code=None, admin1_code=None):
+    """Get administrative boundaries from Earth Engine"""
+    try:
+        if level == 0:
+            return ee.FeatureCollection("FAO/GAUL/2015/level0")
+        elif level == 1:
+            admin1 = ee.FeatureCollection("FAO/GAUL/2015/level1")
+            if country_code:
+                return admin1.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin1
+        elif level == 2:
+            admin2 = ee.FeatureCollection("FAO/GAUL/2015/level2")
+            if admin1_code:
+                return admin2.filter(ee.Filter.eq('ADM1_CODE', admin1_code))
+            elif country_code:
+                return admin2.filter(ee.Filter.eq('ADM0_CODE', country_code))
+            return admin2
+    except Exception as e:
+        st.error(f"Error loading boundaries: {str(e)}")
+        return None
+
+def get_boundary_names(feature_collection, level):
+    """Extract boundary names from Earth Engine FeatureCollection"""
+    try:
+        if level == 0:
+            names = feature_collection.aggregate_array('ADM0_NAME').distinct()
+        elif level == 1:
+            names = feature_collection.aggregate_array('ADM1_NAME').distinct()
+        elif level == 2:
+            names = feature_collection.aggregate_array('ADM2_NAME').distinct()
+        else:
+            return []
+        
+        names_list = names.getInfo()
+        if names_list:
+            return sorted(names_list)
+        return []
+        
+    except Exception as e:
+        st.error(f"Error extracting names: {str(e)}")
+        return []
+
+def get_geometry_coordinates(geometry):
+    """Get center coordinates and bounds from geometry"""
+    try:
+        bounds = geometry.geometry().bounds().getInfo()
+        coords = bounds['coordinates'][0]
+        lats = [coord[1] for coord in coords]
+        lons = [coord[0] for coord in coords]
+        center_lat = sum(lats) / len(lats)
+        center_lon = sum(lons) / len(lons)
+        
+        # Get bounds for drawing rectangle
+        min_lat = min(lats)
+        max_lat = max(lats)
+        min_lon = min(lons)
+        max_lon = max(lons)
+        
+        return {
+            'center': [center_lon, center_lat],
+            'bounds': [[min_lat, min_lon], [max_lat, max_lon]],
+            'zoom': 6
+        }
+    except Exception as e:
+        st.error(f"Error getting coordinates: {str(e)}")
+        return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
 # Create main layout containers
 col1, col2 = st.columns([0.25, 0.75], gap="large")
@@ -723,7 +558,6 @@ with col1:
                     else:
                         selected_admin1 = None
                         selected_admin2 = None
-                        st.warning("No admin1 regions found for this country")
                 else:
                     selected_admin1 = None
                     selected_admin2 = None
@@ -745,6 +579,35 @@ with col1:
         selected_admin2 = None
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Update selected geometry when area is selected
+    if selected_country and selected_country != "Select a country":
+        try:
+            # Determine geometry
+            if selected_admin2 and selected_admin2 != "Select municipality":
+                geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
+                area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
+                area_level = "Municipality"
+            elif selected_admin1 and selected_admin1 != "Select state/province":
+                geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
+                area_name = f"{selected_admin1}, {selected_country}"
+                area_level = "State/Province"
+            else:
+                geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
+                area_name = selected_country
+                area_level = "Country"
+            
+            # Get coordinates for the map
+            coords_info = get_geometry_coordinates(geometry)
+            
+            # Store in session state
+            st.session_state.selected_geometry = geometry
+            st.session_state.selected_coordinates = coords_info
+            st.session_state.selected_area_name = area_name
+            st.session_state.selected_area_level = area_level
+            
+        except Exception as e:
+            st.error(f"Error processing geometry: {str(e)}")
     
     # Analysis Parameters Card
     if selected_country and selected_country != "Select a country":
@@ -800,32 +663,6 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Quick Navigation Card
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">🚀</div><h3 style="margin: 0;">Quick Navigation</h3></div>', unsafe_allow_html=True)
-        
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            if st.button("🇺🇸 USA", use_container_width=True, key="usa_btn"):
-                st.session_state.fly_to_region = "usa"
-                st.rerun()
-            if st.button("🇪🇺 Europe", use_container_width=True, key="europe_btn"):
-                st.session_state.fly_to_region = "europe"
-                st.rerun()
-        with col_g2:
-            if st.button("🇨🇳 Asia", use_container_width=True, key="asia_btn"):
-                st.session_state.fly_to_region = "asia"
-                st.rerun()
-            if st.button("🇧🇷 Americas", use_container_width=True, key="americas_btn"):
-                st.session_state.fly_to_region = "americas"
-                st.rerun()
-        
-        if st.button("🌐 Reset View", use_container_width=True, key="reset_btn"):
-            st.session_state.fly_to_region = "reset"
-            st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
         # Run Analysis Button
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
@@ -833,16 +670,6 @@ with col1:
             else:
                 with st.spinner("Running analysis..."):
                     try:
-                        # Get the selected geometry
-                        if selected_admin2 and selected_admin2 != "Select municipality":
-                            geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                        elif selected_admin1 and selected_admin1 != "Select state/province":
-                            geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                        else:
-                            geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                        
-                        st.session_state.selected_geometry = geometry
-                        
                         # Define collection based on choice
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
@@ -852,18 +679,13 @@ with col1:
                         # Filter collection
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                            .filterBounds(geometry.geometry())
+                            .filterBounds(st.session_state.selected_geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
-                        # Apply cloud masking and add vegetation indices
-                        if collection_choice == "Sentinel-2":
-                            processed_collection = (filtered_collection
-                                .map(mask_clouds)
-                                .map(add_vegetation_indices)
-                            )
-                        else:
-                            processed_collection = filtered_collection.map(add_vegetation_indices)
+                        # Add vegetation indices
+                        from vegetation_indices import add_vegetation_indices
+                        processed_collection = filtered_collection.map(add_vegetation_indices)
                         
                         # Calculate time series for selected indices
                         results = {}
@@ -872,7 +694,7 @@ with col1:
                                 def add_date_and_reduce(image):
                                     reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
-                                        geometry=geometry.geometry(),
+                                        geometry=st.session_state.selected_geometry.geometry(),
                                         scale=100,
                                         maxPixels=1e9
                                     )
@@ -903,19 +725,21 @@ with col1:
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
 
-# MAIN CONTENT AREA - Interactive Mapbox Globe
+# MAIN CONTENT AREA - 3D Mapbox Globe with Selected Area Highlight
 with col2:
-    # Interactive Mapbox Globe
+    # 3D Mapbox Globe
     st.markdown('<div class="card" style="padding: 0;">', unsafe_allow_html=True)
-    st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive Global Map</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div style="padding: 20px 20px 10px 20px;"><h3 style="margin: 0;">Interactive 3D Global Map</h3></div>', unsafe_allow_html=True)
     
-    # Map style mapping
-    map_styles = {
-        "satellite": "mapbox://styles/mapbox/satellite-streets-v12",
-        "street": "mapbox://styles/mapbox/streets-v12",
-        "terrain": "mapbox://styles/mapbox/outdoors-v12",
-        "dark": "mapbox://styles/mapbox/dark-v11"
-    }
+    # Prepare coordinates for the map
+    map_center = [0, 20]
+    map_zoom = 2
+    bounds_data = None
+    
+    if st.session_state.selected_coordinates:
+        map_center = st.session_state.selected_coordinates['center']
+        map_zoom = st.session_state.selected_coordinates['zoom']
+        bounds_data = st.session_state.selected_coordinates['bounds']
     
     # Generate HTML for Mapbox interactive globe
     mapbox_html = f"""
@@ -924,7 +748,7 @@ with col2:
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
-      <title>KHISBA GIS - Interactive Global Map</title>
+      <title>KHISBA GIS - 3D Global Map</title>
       <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
       <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
       <style>
@@ -940,7 +764,7 @@ with col2:
           width: 100%; 
           border-radius: 8px;
         }}
-        .info-panel {{
+        .map-overlay {{
           position: absolute;
           top: 20px;
           right: 20px;
@@ -953,13 +777,13 @@ with col2:
           z-index: 1000;
           font-family: 'Inter', sans-serif;
         }}
-        .info-title {{
+        .overlay-title {{
           color: #00ff88;
           font-weight: 600;
           margin-bottom: 10px;
           font-size: 14px;
         }}
-        .info-text {{
+        .overlay-text {{
           color: #cccccc;
           font-size: 12px;
           line-height: 1.4;
@@ -977,23 +801,61 @@ with col2:
           font-size: 12px;
           z-index: 1000;
         }}
+        .selected-area {{
+          position: absolute;
+          top: 20px;
+          left: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          border: 1px solid #222222;
+          max-width: 300px;
+          z-index: 1000;
+          font-family: 'Inter', sans-serif;
+        }}
+        .area-title {{
+          color: #00ff88;
+          font-weight: 600;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }}
+        .area-details {{
+          color: #cccccc;
+          font-size: 12px;
+          line-height: 1.4;
+        }}
       </style>
     </head>
     <body>
       <div id="map"></div>
-      <div class="info-panel">
-        <div class="info-title">🌍 KHISBA GIS</div>
-        <div class="info-text">
-          • Click on markers to fly to locations<br>
+      
+      <div class="map-overlay">
+        <div class="overlay-title">🌍 KHISBA GIS</div>
+        <div class="overlay-text">
           • Drag to rotate the globe<br>
           • Scroll to zoom in/out<br>
-          • Right-click to pan
+          • Right-click to pan<br>
+          • Selected area highlighted in green
         </div>
       </div>
+      
       <div class="coordinates-display">
         <div>Lat: <span id="lat-display">0.00°</span></div>
         <div>Lon: <span id="lon-display">0.00°</span></div>
       </div>
+      
+      {f'''
+      <div class="selected-area">
+        <div class="area-title">📍 Selected Area</div>
+        <div class="area-details">
+          <strong>{st.session_state.selected_area_name if hasattr(st.session_state, 'selected_area_name') else 'None'}</strong><br>
+          Level: {st.session_state.selected_area_level if hasattr(st.session_state, 'selected_area_level') else 'None'}<br>
+          Coordinates: {map_center[1]:.4f}°, {map_center[0]:.4f}°<br>
+          Status: <span style="color: #00ff88;">Ready for Analysis</span>
+        </div>
+      </div>
+      ''' if st.session_state.selected_area_name else ''}
       
       <script>
         mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
@@ -1001,10 +863,10 @@ with col2:
         // Create a new map instance
         const map = new mapboxgl.Map({{
           container: 'map',
-          style: '{map_styles[st.session_state.map_view]}',
-          center: [0, 20], // Global view
-          zoom: 2,
-          pitch: 0,
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          center: {map_center},
+          zoom: {map_zoom},
+          pitch: 45,
           bearing: 0
         }});
 
@@ -1019,59 +881,93 @@ with col2:
         // Add fullscreen control
         map.addControl(new mapboxgl.FullscreenControl());
 
-        // List of major cities
-        const cities = [
-          {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
-          {{ name: 'Los Angeles', coordinates: [-118.2437, 34.0522], country: 'USA', info: 'Entertainment capital' }},
-          {{ name: 'Chicago', coordinates: [-87.6298, 41.8781], country: 'USA', info: 'Windy City' }},
-          {{ name: 'Houston', coordinates: [-95.3698, 29.7604], country: 'USA', info: 'Space City' }},
-          {{ name: 'Paris', coordinates: [2.3522, 48.8566], country: 'France', info: 'City of Light' }},
-          {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
-          {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
-          {{ name: 'Beijing', coordinates: [116.4074, 39.9042], country: 'China', info: 'Ancient capital' }},
-          {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
-          {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }},
-          {{ name: 'Rio de Janeiro', coordinates: [-43.1729, -22.9068], country: 'Brazil', info: 'Carnival city' }},
-          {{ name: 'Moscow', coordinates: [37.6173, 55.7558], country: 'Russia', info: 'Red Square' }},
-          {{ name: 'Dubai', coordinates: [55.2708, 25.2048], country: 'UAE', info: 'Modern metropolis' }},
-          {{ name: 'Singapore', coordinates: [103.8198, 1.3521], country: 'Singapore', info: 'Garden city' }}
-        ];
-
-        // Region coordinates for quick navigation
-        const regions = {{
-          usa: {{ center: [-95.7129, 37.0902], zoom: 3 }},
-          europe: {{ center: [15.2551, 54.5260], zoom: 3 }},
-          asia: {{ center: [104.1954, 35.8617], zoom: 2 }},
-          americas: {{ center: [-58.3816, -14.2350], zoom: 2 }},
-          reset: {{ center: [0, 20], zoom: 2 }}
-        }};
-
         // Wait for map to load
         map.on('load', () => {{
-          // Add custom markers
+          // Add event listener for mouse move to show coordinates
+          map.on('mousemove', (e) => {{
+            document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
+            document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
+          }});
+
+          // Add selected area polygon if bounds are available
+          {f'''
+          if ({bounds_data}) {{
+            const bounds = {bounds_data};
+            
+            // Create a polygon for the selected area
+            map.addSource('selected-area', {{
+              'type': 'geojson',
+              'data': {{
+                'type': 'Feature',
+                'geometry': {{
+                  'type': 'Polygon',
+                  'coordinates': [[
+                    [bounds[0][1], bounds[0][0]],
+                    [bounds[1][1], bounds[0][0]],
+                    [bounds[1][1], bounds[1][0]],
+                    [bounds[0][1], bounds[1][0]],
+                    [bounds[0][1], bounds[0][0]]
+                  ]]
+                }}
+              }}
+            }});
+
+            // Add the polygon layer
+            map.addLayer({{
+              'id': 'selected-area-fill',
+              'type': 'fill',
+              'source': 'selected-area',
+              'layout': {{}},
+              'paint': {{
+                'fill-color': '#00ff88',
+                'fill-opacity': 0.2
+              }}
+            }});
+
+            // Add border for the polygon
+            map.addLayer({{
+              'id': 'selected-area-border',
+              'type': 'line',
+              'source': 'selected-area',
+              'layout': {{}},
+              'paint': {{
+                'line-color': '#00ff88',
+                'line-width': 3,
+                'line-opacity': 0.8
+              }}
+            }});
+
+            // Fly to the selected area with animation
+            map.flyTo({{
+              center: {map_center},
+              zoom: {map_zoom},
+              duration: 2000,
+              essential: true
+            }});
+          }}
+          ''' if bounds_data else ''}
+
+          // Add some sample cities for interaction
+          const cities = [
+            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
+            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
+            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
+            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
+            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
+          ];
+
+          // Add city markers
           cities.forEach(city => {{
             // Create a custom marker element
             const el = document.createElement('div');
             el.className = 'marker';
-            el.style.backgroundColor = '#00ff88';
-            el.style.width = '20px';
-            el.style.height = '20px';
+            el.style.backgroundColor = '#ffaa00';
+            el.style.width = '15px';
+            el.style.height = '15px';
             el.style.borderRadius = '50%';
             el.style.border = '2px solid #ffffff';
-            el.style.boxShadow = '0 0 10px rgba(0, 255, 136, 0.5)';
+            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
             el.style.cursor = 'pointer';
-            el.style.transition = 'all 0.3s';
-
-            // Add hover effect
-            el.addEventListener('mouseenter', () => {{
-              el.style.transform = 'scale(1.3)';
-              el.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.8)';
-            }});
-
-            el.addEventListener('mouseleave', () => {{
-              el.style.transform = 'scale(1)';
-              el.style.boxShadow = '0 0 10px rgba(0, 255, 136, 0.5)';
-            }});
 
             // Create a popup
             const popup = new mapboxgl.Popup({{
@@ -1085,78 +981,11 @@ with col2:
             );
 
             // Create marker
-            const marker = new mapboxgl.Marker(el)
+            new mapboxgl.Marker(el)
               .setLngLat(city.coordinates)
               .setPopup(popup)
               .addTo(map);
-
-            // Add click event for fly-to animation
-            el.addEventListener('click', (e) => {{
-              e.stopPropagation();
-              
-              // First fly out to zoom all the way out
-              map.flyTo({{
-                center: city.coordinates,
-                zoom: 1,
-                speed: 1,
-                curve: 1.6,
-                easing: (t) => t,
-                essential: true
-              }});
-
-              // Once the first flyTo is done, zoom back into the marker
-              map.once('moveend', () => {{
-                map.flyTo({{
-                  center: city.coordinates,
-                  zoom: 10,
-                  speed: 0.8,
-                  curve: 0.8,
-                  easing: (t) => t * (2 - t),
-                  essential: true
-                }});
-              }});
-
-              // Open the popup
-              popup.addTo(map);
-            }});
           }});
-
-          // Add event listener for mouse move to show coordinates
-          map.on('mousemove', (e) => {{
-            document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
-            document.getElementById('lon-display').textContent = e.lngLat.lng.toFixed(2) + '°';
-          }});
-
-          // Listen for messages from Streamlit to fly to regions
-          window.addEventListener('message', (event) => {{
-            if (event.data && event.data.type === 'FLY_TO_REGION') {{
-              const region = event.data.region;
-              if (regions[region]) {{
-                const {{ center, zoom }} = regions[region];
-                
-                // Fly to region with animation
-                map.flyTo({{
-                  center: center,
-                  zoom: zoom,
-                  duration: 2000,
-                  essential: true
-                }});
-              }}
-            }}
-          }});
-
-          // Trigger initial region fly if specified
-          const initialRegion = localStorage.getItem('flyToRegion');
-          if (initialRegion && regions[initialRegion]) {{
-            const {{ center, zoom }} = regions[initialRegion];
-            map.flyTo({{
-              center: center,
-              zoom: zoom,
-              duration: 2000,
-              essential: true
-            }});
-            localStorage.removeItem('flyToRegion');
-          }}
         }});
       </script>
     </body>
@@ -1165,71 +994,6 @@ with col2:
     
     # Display the Mapbox HTML
     st.components.v1.html(mapbox_html, height=550)
-    
-    # Handle region navigation from Streamlit
-    if 'fly_to_region' in st.session_state and st.session_state.fly_to_region:
-        region = st.session_state.fly_to_region
-        st.markdown(f"""
-        <script>
-            window.parent.postMessage({{
-                type: 'FLY_TO_REGION',
-                region: '{region}'
-            }}, '*');
-        </script>
-        """, unsafe_allow_html=True)
-        # Clear after sending
-        st.session_state.fly_to_region = None
-    
-    # Display selected area info
-    if selected_country and selected_country != "Select a country":
-        try:
-            # Determine geometry
-            if selected_admin2 and selected_admin2 != "Select municipality":
-                geometry = admin2_fc.filter(ee.Filter.eq('ADM2_NAME', selected_admin2))
-                area_name = f"{selected_admin2}, {selected_admin1}, {selected_country}"
-                area_level = "Municipality"
-            elif selected_admin1 and selected_admin1 != "Select state/province":
-                geometry = admin1_fc.filter(ee.Filter.eq('ADM1_NAME', selected_admin1))
-                area_name = f"{selected_admin1}, {selected_country}"
-                area_level = "State/Province"
-            else:
-                geometry = countries_fc.filter(ee.Filter.eq('ADM0_NAME', selected_country))
-                area_name = selected_country
-                area_level = "Country"
-            
-            # Get bounds
-            bounds = geometry.geometry().bounds().getInfo()
-            coords = bounds['coordinates'][0]
-            lats = [coord[1] for coord in coords]
-            lons = [coord[0] for coord in coords]
-            center_lat = sum(lats) / len(lats)
-            center_lon = sum(lons) / len(lons)
-            
-            st.markdown(f"""
-            <div class="info-panel">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="info-item">
-                        <div class="info-label">Study Area</div>
-                        <div class="info-value">{area_name}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Level</div>
-                        <div class="info-value" style="color: #00ff88;">{area_level}</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Coordinates</div>
-                        <div class="info-value">{center_lat:.4f}°, {center_lon:.4f}°</div>
-                    </div>
-                    <div class="info-item">
-                        <div class="info-label">Status</div>
-                        <div class="info-value" style="color: #00ff88;">Ready for Analysis</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        except Exception as e:
-            st.error(f"❌ Error loading area info: {str(e)}")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -1332,7 +1096,7 @@ with col2:
 st.markdown("""
 <div class="section-divider"></div>
 <div style="text-align: center; color: #666666; font-size: 12px; padding: 20px 0;">
-    <p style="margin: 5px 0;">KHISBA GIS • Interactive Global Vegetation Analytics Platform</p>
+    <p style="margin: 5px 0;">KHISBA GIS • Interactive 3D Global Vegetation Analytics Platform</p>
     <p style="margin: 5px 0;">Created by Taibi Farouk Djilali • Clean Green & Black Design</p>
 </div>
 """, unsafe_allow_html=True)
