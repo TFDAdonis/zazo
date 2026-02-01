@@ -498,7 +498,7 @@ def get_geometry_coordinates(geometry):
         st.error(f"Error getting coordinates: {str(e)}")
         return {'center': [0, 20], 'bounds': None, 'zoom': 2}
 
-# Vegetation Indices Functions (matching the second code)
+# Vegetation Indices Functions - FIXED VERSION
 def mask_clouds(image):
     """Mask clouds in Sentinel-2 imagery"""
     # Get the cloud probability band
@@ -515,110 +515,252 @@ def mask_clouds(image):
     # Apply the mask and return the image
     return image.updateMask(mask).divide(10000)
 
-def add_vegetation_indices(image):
-    """Add all vegetation indices to an image"""
-    # For Sentinel-2
-    B2 = image.select('B2')  # Blue
-    B3 = image.select('B3')  # Green
-    B4 = image.select('B4')  # Red
-    B5 = image.select('B5')  # Red Edge 1
-    B6 = image.select('B6')  # Red Edge 2
-    B7 = image.select('B7')  # Red Edge 3
-    B8 = image.select('B8')  # NIR
-    B8A = image.select('B8A')  # Red Edge 4
-    B11 = image.select('B11')  # SWIR 1
-    B12 = image.select('B12')  # SWIR 2
-    
-    # For Landsat-8
-    if image.get('SPACECRAFT_ID') is not None:
-        spacecraft = image.get('SPACECRAFT_ID').getInfo()
-        if 'LANDSAT' in spacecraft:
-            B2 = image.select('SR_B2')  # Blue
-            B3 = image.select('SR_B3')  # Green
-            B4 = image.select('SR_B4')  # Red
-            B5 = image.select('SR_B5')  # NIR
-            B6 = image.select('SR_B6')  # SWIR 1
-            B7 = image.select('SR_B7')  # SWIR 2
-    
-    # Calculate indices
-    ndvi = B8.subtract(B4).divide(B8.add(B4)).rename('NDVI')
-    
-    # EVI - Enhanced Vegetation Index
-    evi = B8.subtract(B4).multiply(2.5).divide(
-        B8.add(B4.multiply(6)).subtract(B2.multiply(7.5)).add(1)
+def calculate_ndvi(image):
+    """Calculate NDVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    return nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+
+def calculate_evi(image):
+    """Calculate EVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    blue = image.select('B2')
+    return nir.subtract(red).multiply(2.5).divide(
+        nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
     ).rename('EVI')
-    
-    # SAVI - Soil Adjusted Vegetation Index
-    savi = B8.subtract(B4).multiply(1.5).divide(
-        B8.add(B4).add(0.5)
+
+def calculate_savi(image):
+    """Calculate SAVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    return nir.subtract(red).multiply(1.5).divide(
+        nir.add(red).add(0.5)
     ).rename('SAVI')
-    
-    # NDWI - Normalized Difference Water Index
-    ndwi = B3.subtract(B8).divide(B3.add(B8)).rename('NDWI')
-    
-    # GNDVI - Green Normalized Difference Vegetation Index
-    gndvi = B8.subtract(B3).divide(B8.add(B3)).rename('GNDVI')
-    
-    # MSAVI - Modified Soil Adjusted Vegetation Index
-    msavi = B8.multiply(2).add(1).subtract(
-        (B8.multiply(2).add(1)).pow(2)
-        .subtract(B8.subtract(B4).multiply(8))
+
+def calculate_ndwi(image):
+    """Calculate NDWI"""
+    green = image.select('B3')
+    nir = image.select('B8')
+    return green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+
+def calculate_gndvi(image):
+    """Calculate GNDVI"""
+    nir = image.select('B8')
+    green = image.select('B3')
+    return nir.subtract(green).divide(nir.add(green)).rename('GNDVI')
+
+def calculate_msavi(image):
+    """Calculate MSAVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    return nir.multiply(2).add(1).subtract(
+        (nir.multiply(2).add(1)).pow(2)
+        .subtract(nir.subtract(red).multiply(8))
         .sqrt()
     ).divide(2).rename('MSAVI')
-    
-    # Additional indices from the second code
-    # ARVI - Atmospherically Resistant Vegetation Index
-    arvi = B8.subtract(B4.add(B4.subtract(B2))).divide(
-        B8.add(B4.subtract(B4.subtract(B2)))
+
+def calculate_arvi(image):
+    """Calculate ARVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    blue = image.select('B2')
+    return nir.subtract(red.add(red.subtract(blue))).divide(
+        nir.add(red.subtract(red.subtract(blue)))
     ).rename('ARVI')
+
+def calculate_dvi(image):
+    """Calculate DVI"""
+    nir = image.select('B8')
+    red = image.select('B4')
+    return nir.subtract(red).rename('DVI')
+
+def calculate_msi(image):
+    """Calculate MSI"""
+    swir1 = image.select('B11')
+    nir = image.select('B8')
+    return swir1.divide(nir).rename('MSI')
+
+def calculate_nbr(image):
+    """Calculate NBR"""
+    nir = image.select('B8')
+    swir2 = image.select('B12')
+    return nir.subtract(swir2).divide(nir.add(swir2)).rename('NBR')
+
+def add_selected_indices(image, selected_indices):
+    """Add only the selected vegetation indices to avoid computation overload"""
+    # Base bands
+    nir = image.select('B8')
+    red = image.select('B4')
+    green = image.select('B3')
+    blue = image.select('B2')
+    swir1 = image.select('B11')
+    swir2 = image.select('B12')
     
-    # DVI - Difference Vegetation Index
-    dvi = B8.subtract(B4).rename('DVI')
+    bands_to_add = []
     
-    # EVI2 - Two-band Enhanced Vegetation Index
-    evi2 = B8.subtract(B4).multiply(2.4).divide(
-        B8.add(B4).add(1)
-    ).rename('EVI2')
+    # Calculate only selected indices
+    if 'NDVI' in selected_indices:
+        ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+        bands_to_add.append(ndvi)
     
-    # MSI - Moisture Stress Index
-    msi = B11.divide(B8).rename('MSI')
+    if 'EVI' in selected_indices:
+        evi = nir.subtract(red).multiply(2.5).divide(
+            nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+        ).rename('EVI')
+        bands_to_add.append(evi)
     
-    # NDTI - Normalized Difference Tillage Index
-    ndti = B11.subtract(B12).divide(B11.add(B12)).rename('NDTI')
+    if 'SAVI' in selected_indices:
+        savi = nir.subtract(red).multiply(1.5).divide(
+            nir.add(red).add(0.5)
+        ).rename('SAVI')
+        bands_to_add.append(savi)
     
-    # OSAVI - Optimized Soil Adjusted Vegetation Index
-    osavi = B8.subtract(B4).divide(B8.add(B4).add(0.16)).rename('OSAVI')
+    if 'NDWI' in selected_indices:
+        ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI')
+        bands_to_add.append(ndwi)
     
-    # RVI - Ratio Vegetation Index
-    rvi = B8.divide(B4).rename('RVI')
+    if 'GNDVI' in selected_indices:
+        gndvi = nir.subtract(green).divide(nir.add(green)).rename('GNDVI')
+        bands_to_add.append(gndvi)
     
-    # TVI - Transformed Vegetation Index
-    tvi = (B8.subtract(B4)).divide(B8.add(B4)).add(0.5).sqrt().rename('TVI')
+    if 'MSAVI' in selected_indices:
+        msavi = nir.multiply(2).add(1).subtract(
+            (nir.multiply(2).add(1)).pow(2)
+            .subtract(nir.subtract(red).multiply(8))
+            .sqrt()
+        ).divide(2).rename('MSAVI')
+        bands_to_add.append(msavi)
     
-    # VARI - Visible Atmospherically Resistant Index
-    vari = B3.subtract(B4).divide(B3.add(B4).subtract(B2)).rename('VARI')
+    if 'ARVI' in selected_indices:
+        arvi = nir.subtract(red.add(red.subtract(blue))).divide(
+            nir.add(red.subtract(red.subtract(blue)))
+        ).rename('ARVI')
+        bands_to_add.append(arvi)
     
-    # WDRVI - Wide Dynamic Range Vegetation Index
-    wdrvi = (B8.multiply(0.1).subtract(B4)).divide(
-        B8.multiply(0.1).add(B4)
-    ).rename('WDRVI')
+    if 'DVI' in selected_indices:
+        dvi = nir.subtract(red).rename('DVI')
+        bands_to_add.append(dvi)
     
-    # GCVI - Green Chlorophyll Vegetation Index
-    gcvi = B8.divide(B3).subtract(1).rename('GCVI')
+    if 'MSI' in selected_indices:
+        msi = swir1.divide(nir).rename('MSI')
+        bands_to_add.append(msi)
     
-    # MNDWI - Modified Normalized Difference Water Index
-    mndwi = B3.subtract(B11).divide(B3.add(B11)).rename('MNDWI')
+    if 'NBR' in selected_indices:
+        nbr_band = nir.subtract(swir2).divide(nir.add(swir2)).rename('NBR')
+        bands_to_add.append(nbr_band)
     
-    # NBR - Normalized Burn Ratio
-    nbr = B8.subtract(B12).divide(B8.add(B12)).rename('NBR')
+    # Add selected bands to image
+    if bands_to_add:
+        return image.addBands(bands_to_add)
+    return image
+
+def process_image_collection(collection, geometry, selected_indices, collection_choice):
+    """Process image collection to calculate time series for selected indices"""
+    results = {}
     
-    # NDMI - Normalized Difference Moisture Index
-    ndmi = B8.subtract(B11).divide(B8.add(B11)).rename('NDMI')
+    # Get the collection as a list
+    collection_list = collection.toList(collection.size())
     
-    # Add all indices to the image
-    return image.addBands([ndvi, evi, savi, ndwi, gndvi, msavi, arvi, dvi, evi2, 
-                          msi, ndti, osavi, rvi, tvi, vari, wdrvi, gcvi, mndwi, 
-                          nbr, ndmi])
+    try:
+        # Get number of images
+        n_images = collection.size().getInfo()
+        
+        if n_images == 0:
+            st.warning("No images found for the selected area and time period")
+            return results
+        
+        # Process each index separately to avoid computation overload
+        for index in selected_indices:
+            try:
+                dates = []
+                values = []
+                
+                # Process each image for this index
+                for i in range(n_images):
+                    try:
+                        # Get image
+                        image = ee.Image(collection_list.get(i))
+                        
+                        # Add the specific index
+                        if collection_choice == "Sentinel-2":
+                            image = mask_clouds(image)
+                        
+                        # Create a function to calculate this specific index
+                        nir = image.select('B8')
+                        red = image.select('B4')
+                        green = image.select('B3')
+                        blue = image.select('B2')
+                        swir1 = image.select('B11')
+                        swir2 = image.select('B12')
+                        
+                        if index == 'NDVI':
+                            index_value = nir.subtract(red).divide(nir.add(red))
+                        elif index == 'EVI':
+                            index_value = nir.subtract(red).multiply(2.5).divide(
+                                nir.add(red.multiply(6)).subtract(blue.multiply(7.5)).add(1)
+                            )
+                        elif index == 'SAVI':
+                            index_value = nir.subtract(red).multiply(1.5).divide(
+                                nir.add(red).add(0.5)
+                            )
+                        elif index == 'NDWI':
+                            index_value = green.subtract(nir).divide(green.add(nir))
+                        elif index == 'GNDVI':
+                            index_value = nir.subtract(green).divide(nir.add(green))
+                        elif index == 'MSAVI':
+                            index_value = nir.multiply(2).add(1).subtract(
+                                (nir.multiply(2).add(1)).pow(2)
+                                .subtract(nir.subtract(red).multiply(8))
+                                .sqrt()
+                            ).divide(2)
+                        elif index == 'ARVI':
+                            index_value = nir.subtract(red.add(red.subtract(blue))).divide(
+                                nir.add(red.subtract(red.subtract(blue)))
+                            )
+                        elif index == 'DVI':
+                            index_value = nir.subtract(red)
+                        elif index == 'MSI':
+                            index_value = swir1.divide(nir)
+                        elif index == 'NBR':
+                            index_value = nir.subtract(swir2).divide(nir.add(swir2))
+                        else:
+                            # For other indices, use a simple NDVI-like calculation
+                            index_value = nir.subtract(red).divide(nir.add(red))
+                        
+                        # Calculate mean value for the geometry
+                        mean_dict = index_value.reduceRegion(
+                            reducer=ee.Reducer.mean(),
+                            geometry=geometry,
+                            scale=100,
+                            maxPixels=1e9
+                        ).getInfo()
+                        
+                        # Get date
+                        date = image.date().format('YYYY-MM-dd').getInfo()
+                        
+                        # Store results
+                        if index in mean_dict and mean_dict[index] is not None:
+                            dates.append(date)
+                            values.append(mean_dict[index])
+                            
+                    except Exception as e:
+                        st.warning(f"Error processing image {i+1}/{n_images} for {index}: {str(e)}")
+                        continue
+                
+                if dates:
+                    results[index] = {'dates': dates, 'values': values}
+                    st.success(f"✓ Processed {index}: {len(dates)} data points")
+                
+            except Exception as e:
+                st.warning(f"Could not calculate {index}: {str(e)}")
+                results[index] = {'dates': [], 'values': []}
+        
+        return results
+        
+    except Exception as e:
+        st.error(f"Error processing collection: {str(e)}")
+        return results
 
 # Create main layout containers
 col1, col2 = st.columns([0.25, 0.75], gap="large")
@@ -773,12 +915,10 @@ with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title"><div class="icon">🌿</div><h3 style="margin: 0;">Vegetation Indices</h3></div>', unsafe_allow_html=True)
         
-        # All available indices from the second code
+        # Available indices - limited to working ones to avoid errors
         available_indices = [
-            'NDVI', 'ARVI', 'ATSAVI', 'DVI', 'EVI', 'EVI2', 'GNDVI', 'MSAVI', 'MSI', 'MTVI', 'MTVI2',
-            'NDTI', 'NDWI', 'OSAVI', 'RDVI', 'RI', 'RVI', 'SAVI', 'TVI', 'TSAVI', 'VARI', 'VIN', 'WDRVI',
-            'GCVI', 'AWEI', 'MNDWI', 'WI', 'ANDWI', 'NDSI', 'nDDI', 'NBR', 'DBSI', 'SI', 'S3', 'BRI',
-            'SSI', 'NDSI_Salinity', 'SRPI', 'MCARI', 'NDCI', 'PSSRb1', 'SIPI', 'PSRI', 'Chl_red_edge', 'MARI', 'NDMI'
+            'NDVI', 'EVI', 'SAVI', 'NDWI', 'GNDVI', 'MSAVI', 
+            'ARVI', 'DVI', 'MSI', 'NBR'
         ]
         
         selected_indices = st.multiselect(
@@ -806,7 +946,7 @@ with col1:
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
-                with st.spinner("Running analysis..."):
+                with st.spinner("Running analysis... This may take a few moments"):
                     try:
                         # Define collection based on choice
                         if collection_choice == "Sentinel-2":
@@ -814,59 +954,37 @@ with col1:
                         else:
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
                         
+                        # Get the geometry
+                        geometry = st.session_state.selected_geometry.geometry()
+                        
                         # Filter collection
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
-                            .filterBounds(st.session_state.selected_geometry.geometry())
+                            .filterBounds(geometry)
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
+                            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 100))  # Additional filter
                         )
                         
-                        # Apply cloud masking and add vegetation indices
-                        if collection_choice == "Sentinel-2":
-                            processed_collection = (filtered_collection
-                                .map(mask_clouds)
-                                .map(add_vegetation_indices)
-                            )
+                        # Limit to reasonable number of images to avoid timeout
+                        filtered_collection = filtered_collection.limit(50)
+                        
+                        # Process the collection
+                        results = process_image_collection(
+                            filtered_collection, 
+                            geometry, 
+                            selected_indices, 
+                            collection_choice
+                        )
+                        
+                        if results:
+                            st.session_state.analysis_results = results
+                            st.success(f"✅ Analysis completed! Processed {len(results)} indices")
                         else:
-                            processed_collection = filtered_collection.map(add_vegetation_indices)
-                        
-                        # Calculate time series for selected indices
-                        results = {}
-                        for index in selected_indices:
-                            try:
-                                def add_date_and_reduce(image):
-                                    reduced = image.select(index).reduceRegion(
-                                        reducer=ee.Reducer.mean(),
-                                        geometry=st.session_state.selected_geometry.geometry(),
-                                        scale=100,
-                                        maxPixels=1e9
-                                    )
-                                    return ee.Feature(None, reduced.set('date', image.date().format()))
-                                
-                                time_series = processed_collection.map(add_date_and_reduce)
-                                time_series_list = time_series.getInfo()
-                                
-                                dates = []
-                                values = []
-                                
-                                if 'features' in time_series_list:
-                                    for feature in time_series_list['features']:
-                                        props = feature['properties']
-                                        if index in props and props[index] is not None and 'date' in props:
-                                            dates.append(props['date'])
-                                            values.append(props[index])
-                                
-                                results[index] = {'dates': dates, 'values': values}
-                                
-                            except Exception as e:
-                                st.warning(f"Could not calculate {index}: {str(e)}")
-                                results[index] = {'dates': [], 'values': []}
-                        
-                        st.session_state.analysis_results = results
-                        st.success("✅ Analysis completed!")
+                            st.error("❌ No valid data found for analysis")
                         
                     except Exception as e:
                         st.error(f"❌ Analysis failed: {str(e)}")
+                        st.info("Try selecting a smaller area or shorter time period")
 
 # MAIN CONTENT AREA - 3D Mapbox Globe with Selected Area Highlight
 with col2:
@@ -968,6 +1086,40 @@ with col2:
           font-size: 12px;
           line-height: 1.4;
         }}
+        .layer-switcher {{
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: rgba(10, 10, 10, 0.9);
+          border: 1px solid #222222;
+          border-radius: 8px;
+          overflow: hidden;
+          z-index: 1000;
+        }}
+        .layer-button {{
+          display: block;
+          width: 120px;
+          padding: 10px;
+          background: #0a0a0a;
+          color: #ffffff;
+          border: none;
+          border-bottom: 1px solid #222222;
+          cursor: pointer;
+          font-size: 12px;
+          text-align: left;
+          transition: all 0.2s;
+        }}
+        .layer-button:hover {{
+          background: #111111;
+        }}
+        .layer-button.active {{
+          background: #00ff88;
+          color: #000000;
+          font-weight: bold;
+        }}
+        .layer-button:last-child {{
+          border-bottom: none;
+        }}
         .mapboxgl-ctrl-group {{
           background: #0a0a0a !important;
           border: 1px solid #222222 !important;
@@ -990,9 +1142,16 @@ with col2:
           • Drag to rotate the globe<br>
           • Scroll to zoom in/out<br>
           • Right-click to pan<br>
-          • Toggle layers in top-right<br>
           • Selected area highlighted in green
         </div>
+      </div>
+      
+      <div class="layer-switcher">
+        <button class="layer-button active" data-style="mapbox://styles/mapbox/satellite-streets-v12">Satellite Streets</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/streets-v12">Streets</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/outdoors-v12">Outdoors</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/light-v11">Light</button>
+        <button class="layer-button" data-style="mapbox://styles/mapbox/dark-v11">Dark</button>
       </div>
       
       <div class="coordinates-display">
@@ -1015,10 +1174,10 @@ with col2:
       <script>
         mapboxgl.accessToken = 'pk.eyJ1IjoiYnJ5Y2VseW5uMjUiLCJhIjoiY2x1a2lmcHh5MGwycTJrbzZ4YXVrb2E0aiJ9.LXbneMJJ6OosHv9ibtI5XA';
 
-        // Create a new map instance with multiple layers
+        // Create a new map instance with SATELLITE STREETS as default
         const map = new mapboxgl.Map({{
           container: 'map',
-          style: 'mapbox://styles/mapbox/satellite-streets-v12',
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',  // Default is Satellite Streets
           center: {map_center},
           zoom: {map_zoom},
           pitch: 45,
@@ -1036,62 +1195,25 @@ with col2:
         // Add fullscreen control
         map.addControl(new mapboxgl.FullscreenControl());
 
-        // Wait for map to load
-        map.on('load', () => {{
-          // Add street layer toggle functionality
-          const layers = [
-            'satellite-streets-v12',
-            'streets-v12',
-            'outdoors-v12',
-            'light-v11',
-            'dark-v11'
-          ];
-          
-          // Create layer switcher
-          const layerList = document.createElement('div');
-          layerList.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
-          layerList.style.marginRight = '10px';
-          layerList.style.marginTop = '10px';
-          
-          const baseLayers = [
-            {{ name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' }},
-            {{ name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' }},
-            {{ name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' }},
-            {{ name: 'Light', style: 'mapbox://styles/mapbox/light-v11' }},
-            {{ name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' }}
-          ];
-          
-          baseLayers.forEach((layer) => {{
-            const layerElement = document.createElement('button');
-            layerElement.textContent = layer.name;
-            layerElement.className = 'mapboxgl-ctrl-icon';
-            layerElement.style.width = '100px';
-            layerElement.style.height = '30px';
-            layerElement.style.margin = '0';
-            layerElement.style.padding = '5px';
-            layerElement.style.fontSize = '12px';
-            layerElement.style.textAlign = 'center';
-            layerElement.style.cursor = 'pointer';
-            layerElement.style.borderBottom = '1px solid #222222';
-            layerElement.style.backgroundColor = '#0a0a0a';
-            layerElement.style.color = '#ffffff';
+        // Layer switcher functionality
+        const layerButtons = document.querySelectorAll('.layer-button');
+        layerButtons.forEach(button => {{
+          button.addEventListener('click', () => {{
+            // Update active button
+            layerButtons.forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
             
-            layerElement.addEventListener('click', () => {{
-              map.setStyle(layer.style);
-              
-              // Re-add selected area after style change
-              setTimeout(() => {{
-                {f'''
-                if ({bounds_data}) {{
-                  const bounds = {bounds_data};
-                  
-                  // Remove existing layers if they exist
-                  if (map.getSource('selected-area')) {{
-                    map.removeLayer('selected-area-fill');
-                    map.removeLayer('selected-area-border');
-                    map.removeSource('selected-area');
-                  }}
-                  
+            // Change map style
+            map.setStyle(button.dataset.style);
+            
+            // Re-add selected area after style change
+            setTimeout(() => {{
+              {f'''
+              if ({bounds_data}) {{
+                const bounds = {bounds_data};
+                
+                // Check if source already exists
+                if (!map.getSource('selected-area')) {{
                   // Create a polygon for the selected area
                   map.addSource('selected-area', {{
                     'type': 'geojson',
@@ -1135,15 +1257,14 @@ with col2:
                     }}
                   }});
                 }}
-                ''' if bounds_data else ''}
-              }}, 100);
-            }});
-            
-            layerList.appendChild(layerElement);
+              }}
+              ''' if bounds_data else ''}
+            }}, 500);
           }});
-          
-          map.getContainer().appendChild(layerList);
+        }});
 
+        // Wait for map to load
+        map.on('load', () => {{
           // Add event listener for mouse move to show coordinates
           map.on('mousemove', (e) => {{
             document.getElementById('lat-display').textContent = e.lngLat.lat.toFixed(2) + '°';
@@ -1281,7 +1402,8 @@ with col2:
                         'Mean': round(sum(values) / len(values), 4),
                         'Min': round(min(values), 4),
                         'Max': round(max(values), 4),
-                        'Count': len(values)
+                        'Count': len(values),
+                        'Std Dev': round(pd.Series(values).std(), 4)
                     })
         
         if summary_data:
@@ -1301,7 +1423,7 @@ with col2:
                         dates = []
                         for date_str in data['dates']:
                             try:
-                                date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
                                 dates.append(date_obj)
                             except:
                                 continue
@@ -1323,15 +1445,20 @@ with col2:
                             fig.add_trace(go.Scatter(
                                 x=df['Date'], 
                                 y=df['Value'],
-                                mode='lines',
+                                mode='lines+markers',
                                 name=f'{index} Index',
                                 line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
-                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>'
+                                marker=dict(
+                                    size=6,
+                                    color='#00ff88' if is_increasing else '#ff4444',
+                                    line=dict(width=1, color='#ffffff')
+                                ),
+                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x|%Y-%m-%d}<br>Value: %{y:.4f}<extra></extra>'
                             ))
                             
                             # Add 5-day moving average
                             if len(df) >= 5:
-                                df['MA_5'] = df['Value'].rolling(window=5).mean()
+                                df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
                                 fig.add_trace(go.Scatter(
                                     x=df['Date'], 
                                     y=df['MA_5'],
@@ -1351,18 +1478,22 @@ with col2:
                                     gridcolor='#222222',
                                     zerolinecolor='#222222',
                                     tickcolor='#444444',
-                                    title_font_color='#ffffff'
+                                    title_font_color='#ffffff',
+                                    tickformat='%Y-%m-%d'
                                 ),
                                 yaxis=dict(
                                     gridcolor='#222222',
                                     zerolinecolor='#222222',
                                     tickcolor='#444444',
-                                    title_font_color='#ffffff'
+                                    title_font_color='#ffffff',
+                                    title=f'{index} Value'
                                 ),
                                 legend=dict(
                                     bgcolor='rgba(0,0,0,0.5)',
                                     bordercolor='#222222',
-                                    borderwidth=1
+                                    borderwidth=1,
+                                    x=0.01,
+                                    y=0.99
                                 ),
                                 hovermode='x unified',
                                 height=300,
