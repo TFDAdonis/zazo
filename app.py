@@ -66,6 +66,91 @@ def main():
         token_data = {
             'code': code,
             'client_id': CLIENT_ID,
+            'client_import streamlit as st
+import json
+import tempfile
+import os
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+from datetime import datetime, timedelta
+import ee
+import traceback
+import requests
+import urllib.parse
+
+# Detect if we're running locally or on Streamlit Cloud
+is_local = "localhost" in st.get_script_path() or "8501" in st.get_script_path()
+
+# Set redirect URI based on environment
+if is_local:
+    REDIRECT_URI = "http://localhost:8501"
+    st.info("Running in LOCAL mode")
+else:
+    REDIRECT_URI = "https://4uwduabizub3vubysxc8hz.streamlit.app"
+    st.info("Running in CLOUD mode")
+
+# Your OAuth credentials
+CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
+CLIENT_SECRET = "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"
+
+# Simple scopes
+SCOPES = [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid"
+]
+
+# Google OAuth endpoints
+AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+# Set page config
+st.set_page_config(page_title="Google Auth App", page_icon="🔐", layout="wide")
+
+def show_main_app():
+    """Your main app content after authentication"""
+    st.title("🌍 Your Earth Engine App")
+    
+    # Add your existing Earth Engine/app code here
+    st.write("Welcome to the main application!")
+    st.write("You can now access all features.")
+    
+    # Example: Add a map
+    m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+    folium.Marker([20.5937, 78.9629], popup='India').add_to(m)
+    st_folium(m, width=700, height=500)
+
+def main():
+    # Initialize session state
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    if 'user_info' not in st.session_state:
+        st.session_state.user_info = None
+    
+    # Check URL parameters for OAuth callback
+    query_params = st.query_params
+    
+    # Debug info - show current redirect URI
+    with st.sidebar:
+        st.write(f"**Redirect URI:** {REDIRECT_URI}")
+    
+    # Handle OAuth callback
+    if 'code' in query_params:
+        code = query_params['code']
+        
+        st.write(f"🎯 Got OAuth code, exchanging for token...")
+        st.write(f"📋 Using redirect URI: {REDIRECT_URI}")
+        
+        # Exchange code for tokens
+        token_data = {
+            'code': code,
+            'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
             'redirect_uri': REDIRECT_URI,
             'grant_type': 'authorization_code'
@@ -78,6 +163,7 @@ def main():
             
             if 'access_token' in token_json:
                 access_token = token_json['access_token']
+                st.success("✅ Got access token!")
                 
                 # Get user info
                 headers = {'Authorization': f'Bearer {access_token}'}
@@ -85,6 +171,7 @@ def main():
                 
                 if user_response.status_code == 200:
                     user_info = user_response.json()
+                    st.success(f"✅ Welcome {user_info.get('name')}!")
                     
                     # Store in session state
                     st.session_state.authenticated = True
@@ -94,12 +181,12 @@ def main():
                     st.query_params.clear()
                     st.rerun()
                 else:
-                    st.error(f"Failed to get user info: {user_response.text}")
+                    st.error(f"❌ Failed to get user info: {user_response.text}")
             else:
-                st.error(f"Failed to get access token: {token_json}")
+                st.error(f"❌ Failed to get access token: {token_json}")
                 
         except Exception as e:
-            st.error(f"Authentication failed: {str(e)}")
+            st.error(f"❌ Authentication failed: {str(e)}")
     
     # Display appropriate UI based on authentication status
     if st.session_state.authenticated and st.session_state.user_info:
@@ -140,18 +227,23 @@ def main():
         
         auth_url = f"{AUTH_URL}?{urllib.parse.urlencode(auth_params)}"
         
+        # Show important debug info
+        st.warning(f"**Important:** Make sure this redirect URI is added in Google Cloud Console:")
+        st.code(REDIRECT_URI)
+        
         # Center the login button
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             # Show the authorization URL for debugging
-            if st.checkbox("Show debug info"):
+            if st.checkbox("Show debug info", value=True):
                 st.write("**Authorization URL:**")
-                st.code(auth_url)
-                st.write("**Scopes:**", scope_string)
+                st.code(auth_url[:100] + "...")
+                st.write("**Full Scopes:**", scope_string)
+                st.write("**Client ID:**", CLIENT_ID[:20] + "...")
             
             # Google Sign-in Button
             st.markdown(f"""
-            <a href="{auth_url}" target="_self">
+            <a href="{auth_url}">
                 <div style="
                     background-color: #4285F4;
                     color: white;
@@ -186,7 +278,10 @@ def main():
             """, unsafe_allow_html=True)
             
             st.divider()
-            st.write("**Note:** Make sure you've added your email as a test user in Google Cloud Console.")
+            st.write("### 🔧 Configuration Checklist:")
+            st.write("1. ✅ Client ID and Secret added to code")
+            st.write(f"2. ❓ Redirect URI `{REDIRECT_URI}` added to Google Cloud Console")
+            st.write("3. ❓ Your email added as test user in Google Cloud Console")
 
 if __name__ == "__main__":
     main()
