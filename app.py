@@ -18,7 +18,7 @@ import urllib.parse
 # Your OAuth credentials
 CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
 CLIENT_SECRET = "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"
-REDIRECT_URI = "http://localhost:8501"
+REDIRECT_URI = "https://4uwduabizub3vubysxc8hz.streamlit.app/"
 
 # Simple scopes that are easier to configure
 SCOPES = [
