@@ -12,174 +12,173 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-import streamlit as st
-from google_auth_oauthlib.flow import Flow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 import requests
-pip install google-auth-oauthlib requests
+import urllib.parse
+
 # Your OAuth credentials from the JSON file
 CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
 CLIENT_SECRET = "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"
 REDIRECT_URI = "http://localhost:8501"
 
+# Google OAuth endpoints
+AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
+
 # Scopes for what you want to access
-SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.profile", 
-          "https://www.googleapis.com/auth/userinfo.email"]
+SCOPES = ["openid", "profile", "email"]
 
 # Set page config
-st.set_page_config(page_title="Google Auth App", page_icon="🔐")
+st.set_page_config(page_title="Google Auth App", page_icon="🔐", layout="wide")
 
 st.title('🔐 Streamlit Google Authentication')
 
-def create_flow():
-    """Create OAuth flow instance"""
-    flow = Flow.from_client_config(
-        client_config={
-            "web": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [REDIRECT_URI]
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI
-    )
-    return flow
+def show_main_app():
+    """Your main app content after authentication"""
+    st.title("🌍 Your Earth Engine App")
+    
+    # Add your existing Earth Engine/app code here
+    st.write("Welcome to the main application!")
+    st.write("You can now access all features.")
+    
+    # Example: Add a map
+    m = folium.Map(location=[20.5937, 78.9629], zoom_start=5)
+    folium.Marker([20.5937, 78.9629], popup='India').add_to(m)
+    st_folium(m, width=700, height=500)
 
 def main():
     # Initialize session state
-    if 'credentials' not in st.session_state:
-        st.session_state.credentials = None
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
+    if 'access_token' not in st.session_state:
+        st.session_state.access_token = None
     
-    # Check if we have credentials
-    if st.session_state.credentials:
-        # User is logged in
-        if st.session_state.user_info:
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.session_state.user_info.get('picture'):
-                    st.image(st.session_state.user_info.get('picture'), width=100)
+    # Check URL parameters for OAuth callback
+    query_params = st.query_params
+    
+    # Handle OAuth callback
+    if 'code' in query_params:
+        code = query_params['code']
+        
+        # Exchange code for tokens
+        token_data = {
+            'code': code,
+            'client_id': CLIENT_ID,
+            'client_secret': CLIENT_SECRET,
+            'redirect_uri': REDIRECT_URI,
+            'grant_type': 'authorization_code'
+        }
+        
+        try:
+            # Get access token
+            response = requests.post(TOKEN_URL, data=token_data)
+            token_json = response.json()
             
-            with col2:
-                st.write(f"👋 **Hello, {st.session_state.user_info.get('name')}!**")
-                st.write(f"📧 **Email:** {st.session_state.user_info.get('email')}")
-            
-            st.divider()
-            st.success("✅ You are successfully logged in!")
-            
-            # Show logout button
-            if st.button('🚪 Log out', type="primary"):
-                # Clear session state
-                for key in ['credentials', 'user_info']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-        else:
-            # Try to fetch user info
-            try:
-                creds = Credentials(
-                    token=st.session_state.credentials.get('token'),
-                    refresh_token=st.session_state.credentials.get('refresh_token'),
-                    token_uri="https://oauth2.googleapis.com/token",
-                    client_id=CLIENT_ID,
-                    client_secret=CLIENT_SECRET,
-                    scopes=SCOPES
-                )
-                
-                # Refresh token if needed
-                if creds.expired:
-                    creds.refresh(Request())
-                    # Update stored token
-                    st.session_state.credentials['token'] = creds.token
+            if 'access_token' in token_json:
+                access_token = token_json['access_token']
                 
                 # Get user info
-                user_info_response = requests.get(
-                    'https://www.googleapis.com/oauth2/v1/userinfo',
-                    headers={'Authorization': f'Bearer {creds.token}'}
-                )
-                st.session_state.user_info = user_info_response.json()
-                st.rerun()
+                headers = {'Authorization': f'Bearer {access_token}'}
+                user_response = requests.get(USERINFO_URL, headers=headers)
+                user_info = user_response.json()
                 
-            except Exception as e:
-                st.error(f"Error fetching user info: {e}")
-                if st.button("Try again"):
-                    st.rerun()
-    else:
-        # User is not logged in
-        st.info("🔐 Please log in with your Google account to continue")
-        
-        # Check for callback (Google redirects back with code)
-        query_params = st.query_params
-        
-        if 'code' in query_params and 'state' in query_params:
-            try:
-                # We're in the callback phase
-                st.write("🔄 Processing authentication...")
-                
-                flow = create_flow()
-                flow.fetch_token(code=query_params['code'])
-                
-                # Store credentials
-                st.session_state.credentials = {
-                    'token': flow.credentials.token,
-                    'refresh_token': flow.credentials.refresh_token,
-                    'token_uri': flow.credentials.token_uri,
-                    'client_id': flow.credentials.client_id,
-                    'client_secret': flow.credentials.client_secret,
-                    'scopes': flow.credentials.scopes
-                }
+                # Store in session state
+                st.session_state.authenticated = True
+                st.session_state.user_info = user_info
+                st.session_state.access_token = access_token
                 
                 # Clear URL parameters
                 st.query_params.clear()
                 st.rerun()
+            else:
+                st.error("Failed to get access token")
                 
-            except Exception as e:
-                st.error(f"❌ Authentication failed: {e}")
-                if st.button("Try again"):
-                    st.query_params.clear()
-                    st.rerun()
-        else:
-            # Initial state - show login button
-            flow = create_flow()
-            authorization_url, state = flow.authorization_url(
-                access_type='offline',
-                include_granted_scopes='true',
-                prompt='consent'
-            )
+        except Exception as e:
+            st.error(f"Authentication failed: {e}")
+    
+    # Display appropriate UI based on authentication status
+    if st.session_state.authenticated and st.session_state.user_info:
+        # User is logged in - show main app
+        user_info = st.session_state.user_info
+        
+        # Sidebar with user info
+        with st.sidebar:
+            st.title("👤 User Profile")
+            if user_info.get('picture'):
+                st.image(user_info['picture'], width=100)
+            st.write(f"**Name:** {user_info.get('name', 'User')}")
+            st.write(f"**Email:** {user_info.get('email')}")
             
-            # Create login button
+            if st.button("🚪 Logout", type="primary", use_container_width=True):
+                st.session_state.authenticated = False
+                st.session_state.user_info = None
+                st.session_state.access_token = None
+                st.rerun()
+        
+        # Main app content
+        show_main_app()
+        
+    else:
+        # User is not logged in - show login screen
+        st.info("🔐 Please sign in with your Google account to continue")
+        
+        # Build authorization URL
+        auth_params = {
+            'client_id': CLIENT_ID,
+            'redirect_uri': REDIRECT_URI,
+            'response_type': 'code',
+            'scope': ' '.join(SCOPES),
+            'access_type': 'offline',
+            'prompt': 'consent'
+        }
+        
+        auth_url = f"{AUTH_URL}?{urllib.parse.urlencode(auth_params)}"
+        
+        # Center the login button
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            # Google Sign-in Button
             st.markdown(f"""
-            <a href="{authorization_url}" target="_self">
-                <button style="
+            <a href="{auth_url}" target="_self">
+                <div style="
                     background-color: #4285F4;
                     color: white;
                     padding: 12px 24px;
-                    border: none;
                     border-radius: 4px;
+                    font-family: 'Roboto', sans-serif;
                     font-size: 16px;
+                    font-weight: 500;
+                    text-align: center;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     gap: 10px;
-                    width: 100%;
+                    margin: 20px 0;
+                    text-decoration: none;
                 ">
-                    <img src="https://www.google.com/favicon.ico" width="20" height="20">
-                    Sign in with Google
-                </button>
+                    <div style="
+                        background: white;
+                        padding: 8px;
+                        border-radius: 2px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    ">
+                        <img src="https://www.google.com/favicon.ico" width="18" height="18">
+                    </div>
+                    <span>Sign in with Google</span>
+                </div>
             </a>
             """, unsafe_allow_html=True)
             
             st.divider()
-            st.write("### 📝 What you'll get access to:")
-            st.write("• Your Google profile information")
-            st.write("• Your email address")
-            st.write("• Your profile picture")
+            st.write("**This will allow you to:**")
+            st.write("• Access your basic profile information")
+            st.write("• See your name and email")
+            st.write("• View your profile picture")
 
 if __name__ == "__main__":
     main()
