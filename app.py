@@ -12,7 +12,178 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
+import streamlit as st
+from google_auth_oauthlib.flow import Flow
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+import requests
 
+# Your OAuth credentials from the JSON file
+CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
+CLIENT_SECRET = "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"
+REDIRECT_URI = "http://localhost:8501"
+
+# Scopes for what you want to access
+SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.profile", 
+          "https://www.googleapis.com/auth/userinfo.email"]
+
+# Set page config
+st.set_page_config(page_title="Google Auth App", page_icon="🔐")
+
+st.title('🔐 Streamlit Google Authentication')
+
+def create_flow():
+    """Create OAuth flow instance"""
+    flow = Flow.from_client_config(
+        client_config={
+            "web": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [REDIRECT_URI]
+            }
+        },
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    return flow
+
+def main():
+    # Initialize session state
+    if 'credentials' not in st.session_state:
+        st.session_state.credentials = None
+    if 'user_info' not in st.session_state:
+        st.session_state.user_info = None
+    
+    # Check if we have credentials
+    if st.session_state.credentials:
+        # User is logged in
+        if st.session_state.user_info:
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.session_state.user_info.get('picture'):
+                    st.image(st.session_state.user_info.get('picture'), width=100)
+            
+            with col2:
+                st.write(f"👋 **Hello, {st.session_state.user_info.get('name')}!**")
+                st.write(f"📧 **Email:** {st.session_state.user_info.get('email')}")
+            
+            st.divider()
+            st.success("✅ You are successfully logged in!")
+            
+            # Show logout button
+            if st.button('🚪 Log out', type="primary"):
+                # Clear session state
+                for key in ['credentials', 'user_info']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+        else:
+            # Try to fetch user info
+            try:
+                creds = Credentials(
+                    token=st.session_state.credentials.get('token'),
+                    refresh_token=st.session_state.credentials.get('refresh_token'),
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id=CLIENT_ID,
+                    client_secret=CLIENT_SECRET,
+                    scopes=SCOPES
+                )
+                
+                # Refresh token if needed
+                if creds.expired:
+                    creds.refresh(Request())
+                    # Update stored token
+                    st.session_state.credentials['token'] = creds.token
+                
+                # Get user info
+                user_info_response = requests.get(
+                    'https://www.googleapis.com/oauth2/v1/userinfo',
+                    headers={'Authorization': f'Bearer {creds.token}'}
+                )
+                st.session_state.user_info = user_info_response.json()
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error fetching user info: {e}")
+                if st.button("Try again"):
+                    st.rerun()
+    else:
+        # User is not logged in
+        st.info("🔐 Please log in with your Google account to continue")
+        
+        # Check for callback (Google redirects back with code)
+        query_params = st.query_params
+        
+        if 'code' in query_params and 'state' in query_params:
+            try:
+                # We're in the callback phase
+                st.write("🔄 Processing authentication...")
+                
+                flow = create_flow()
+                flow.fetch_token(code=query_params['code'])
+                
+                # Store credentials
+                st.session_state.credentials = {
+                    'token': flow.credentials.token,
+                    'refresh_token': flow.credentials.refresh_token,
+                    'token_uri': flow.credentials.token_uri,
+                    'client_id': flow.credentials.client_id,
+                    'client_secret': flow.credentials.client_secret,
+                    'scopes': flow.credentials.scopes
+                }
+                
+                # Clear URL parameters
+                st.query_params.clear()
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Authentication failed: {e}")
+                if st.button("Try again"):
+                    st.query_params.clear()
+                    st.rerun()
+        else:
+            # Initial state - show login button
+            flow = create_flow()
+            authorization_url, state = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
+            
+            # Create login button
+            st.markdown(f"""
+            <a href="{authorization_url}" target="_self">
+                <button style="
+                    background-color: #4285F4;
+                    color: white;
+                    padding: 12px 24px;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 16px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    width: 100%;
+                ">
+                    <img src="https://www.google.com/favicon.ico" width="20" height="20">
+                    Sign in with Google
+                </button>
+            </a>
+            """, unsafe_allow_html=True)
+            
+            st.divider()
+            st.write("### 📝 What you'll get access to:")
+            st.write("• Your Google profile information")
+            st.write("• Your email address")
+            st.write("• Your profile picture")
+
+if __name__ == "__main__":
+    main()
+    
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
 <style>
