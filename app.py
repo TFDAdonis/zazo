@@ -15,23 +15,25 @@ import traceback
 import requests
 import urllib.parse
 
-# Your OAuth credentials from the JSON file
+# Your OAuth credentials
 CLIENT_ID = "475971385635-hlvnhvp9sc7v1s2meu6htdnt8b5jbmbc.apps.googleusercontent.com"
 CLIENT_SECRET = "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"
 REDIRECT_URI = "http://localhost:8501"
 
+# Simple scopes that are easier to configure
+SCOPES = [
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid"
+]
+
 # Google OAuth endpoints
 AUTH_URL = "https://accounts.google.com/o/oauth2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
-USERINFO_URL = "https://www.googleapis.com/oauth2/v1/userinfo"
-
-# Scopes for what you want to access
-SCOPES = ["openid", "profile", "email"]
+USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 # Set page config
 st.set_page_config(page_title="Google Auth App", page_icon="🔐", layout="wide")
-
-st.title('🔐 Streamlit Google Authentication')
 
 def show_main_app():
     """Your main app content after authentication"""
@@ -52,8 +54,6 @@ def main():
         st.session_state.authenticated = False
     if 'user_info' not in st.session_state:
         st.session_state.user_info = None
-    if 'access_token' not in st.session_state:
-        st.session_state.access_token = None
     
     # Check URL parameters for OAuth callback
     query_params = st.query_params
@@ -82,21 +82,24 @@ def main():
                 # Get user info
                 headers = {'Authorization': f'Bearer {access_token}'}
                 user_response = requests.get(USERINFO_URL, headers=headers)
-                user_info = user_response.json()
                 
-                # Store in session state
-                st.session_state.authenticated = True
-                st.session_state.user_info = user_info
-                st.session_state.access_token = access_token
-                
-                # Clear URL parameters
-                st.query_params.clear()
-                st.rerun()
+                if user_response.status_code == 200:
+                    user_info = user_response.json()
+                    
+                    # Store in session state
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    
+                    # Clear URL parameters
+                    st.query_params.clear()
+                    st.rerun()
+                else:
+                    st.error(f"Failed to get user info: {user_response.text}")
             else:
-                st.error("Failed to get access token")
+                st.error(f"Failed to get access token: {token_json}")
                 
         except Exception as e:
-            st.error(f"Authentication failed: {e}")
+            st.error(f"Authentication failed: {str(e)}")
     
     # Display appropriate UI based on authentication status
     if st.session_state.authenticated and st.session_state.user_info:
@@ -106,7 +109,7 @@ def main():
         # Sidebar with user info
         with st.sidebar:
             st.title("👤 User Profile")
-            if user_info.get('picture'):
+            if 'picture' in user_info:
                 st.image(user_info['picture'], width=100)
             st.write(f"**Name:** {user_info.get('name', 'User')}")
             st.write(f"**Email:** {user_info.get('email')}")
@@ -114,7 +117,6 @@ def main():
             if st.button("🚪 Logout", type="primary", use_container_width=True):
                 st.session_state.authenticated = False
                 st.session_state.user_info = None
-                st.session_state.access_token = None
                 st.rerun()
         
         # Main app content
@@ -122,14 +124,16 @@ def main():
         
     else:
         # User is not logged in - show login screen
-        st.info("🔐 Please sign in with your Google account to continue")
+        st.title("🔐 Google Authentication")
+        st.info("Please sign in with your Google account to continue")
         
-        # Build authorization URL
+        # Build authorization URL with proper scopes
+        scope_string = " ".join(SCOPES)
         auth_params = {
             'client_id': CLIENT_ID,
             'redirect_uri': REDIRECT_URI,
             'response_type': 'code',
-            'scope': ' '.join(SCOPES),
+            'scope': scope_string,
             'access_type': 'offline',
             'prompt': 'consent'
         }
@@ -139,35 +143,42 @@ def main():
         # Center the login button
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            # Show the authorization URL for debugging
+            if st.checkbox("Show debug info"):
+                st.write("**Authorization URL:**")
+                st.code(auth_url)
+                st.write("**Scopes:**", scope_string)
+            
             # Google Sign-in Button
             st.markdown(f"""
             <a href="{auth_url}" target="_self">
                 <div style="
                     background-color: #4285F4;
                     color: white;
-                    padding: 12px 24px;
-                    border-radius: 4px;
+                    padding: 15px 30px;
+                    border-radius: 5px;
                     font-family: 'Roboto', sans-serif;
-                    font-size: 16px;
+                    font-size: 18px;
                     font-weight: 500;
                     text-align: center;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 10px;
-                    margin: 20px 0;
+                    gap: 15px;
+                    margin: 30px 0;
                     text-decoration: none;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
                 ">
                     <div style="
                         background: white;
-                        padding: 8px;
-                        border-radius: 2px;
+                        padding: 10px;
+                        border-radius: 3px;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                     ">
-                        <img src="https://www.google.com/favicon.ico" width="18" height="18">
+                        <img src="https://www.google.com/favicon.ico" width="24" height="24">
                     </div>
                     <span>Sign in with Google</span>
                 </div>
@@ -175,10 +186,7 @@ def main():
             """, unsafe_allow_html=True)
             
             st.divider()
-            st.write("**This will allow you to:**")
-            st.write("• Access your basic profile information")
-            st.write("• See your name and email")
-            st.write("• View your profile picture")
+            st.write("**Note:** Make sure you've added your email as a test user in Google Cloud Console.")
 
 if __name__ == "__main__":
     main()
