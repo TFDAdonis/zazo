@@ -353,7 +353,7 @@ if 'ee_auto_initialized' not in st.session_state:
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
+    st.session_state.authenticated = True  # Set to True since we're removing authentication
 if 'ee_initialized' not in st.session_state:
     st.session_state.ee_initialized = False
 if 'selected_geometry' not in st.session_state:
@@ -373,47 +373,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Authentication check
-if not st.session_state.authenticated:
-    st.markdown("""
-    <div class="main-container">
-        <div class="content-container" style="max-width: 500px; margin: 100px auto;">
-            <div class="card">
-                <h1 style="text-align: center; margin-bottom: 10px;">🌍 KHISBA GIS</h1>
-                <p style="text-align: center; color: #999999; margin-bottom: 30px;">3D Global Vegetation Analytics</p>
-                
-                <div class="alert alert-warning" style="text-align: center;">
-                    🔐 Authentication Required
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        password = st.text_input("", type="password", placeholder="Enter admin password", label_visibility="collapsed")
-        
-        if st.button("🔓 Sign In", type="primary", use_container_width=True):
-            if password == "admin":
-                st.session_state.authenticated = True
-                st.success("✅ Authentication successful!")
-                st.rerun()
-            else:
-                st.error("❌ Invalid password")
-    
-    st.markdown("""
-    <div class="main-container">
-        <div class="content-container" style="max-width: 500px; margin: 30px auto;">
-            <div class="card">
-                <p style="text-align: center; color: #00ff88; font-weight: 600; margin-bottom: 10px;">Demo Access</p>
-                <p style="text-align: center; color: #999999;">Use <strong>admin</strong> / <strong>admin</strong> for demo</p>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.stop()
+# Set authenticated to True since we're removing authentication
+st.session_state.authenticated = True
 
 # Main Dashboard Layout
 st.markdown("""
