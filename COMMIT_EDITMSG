@@ -1,8 +1,10 @@
-Add authentication and update charts for vegetation analysis
+Implement Google authentication for the Streamlit application
 
-Implement a password-protected authentication system and rename "Trading" to "Vegetation" in chart titles and labels.
+Remove frontend code and dependencies, and add Python Streamlit app with Google OAuth integration.
 
 Replit-Commit-Author: Agent
-Replit-Commit-Session-Id: c2608dc7-03a8-4072-add4-134d77211e1b
+Replit-Commit-Session-Id: c01580bc-57b1-4666-a7d1-de1cb0fe9109
 Replit-Commit-Checkpoint-Type: full_checkpoint
-Replit-Commit-Screenshot-Url: https://storage.googleapis.com/screenshot-production-us-central1/d5f1cef2-13a7-43e9-afd0-bd21f3f8dd91/c2608dc7-03a8-4072-add4-134d77211e1b/uXOGaWE
+Replit-Commit-Event-Id: 4dc54e9a-9b88-484e-8441-2d54be3e8d61
+Replit-Commit-Screenshot-Url: https://storage.googleapis.com/screenshot-production-us-central1/a6ec888a-cce2-40a0-bb71-db92f185ba59/c01580bc-57b1-4666-a7d1-de1cb0fe9109/zrDJp69
+Replit-Helium-Checkpoint-Created: true
