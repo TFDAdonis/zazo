@@ -1,7 +1,7 @@
 geemap==0.29.5
 earthengine-api==0.1.394
 streamlit==1.29.0
-folium==0.14.0
+
 streamlit-folium==0.16.0
 pandas==2.1.4
 plotly==5.18.0
