@@ -12,8 +12,23 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-import google_auth_oauthlib.flow
-from googleapiclient.discovery import build
+
+# Try to import Google OAuth packages
+try:
+    import google_auth_oauthlib.flow
+    from googleapiclient.discovery import build
+    GOOGLE_OAUTH_AVAILABLE = True
+except ImportError as e:
+    GOOGLE_OAUTH_AVAILABLE = False
+    st.warning(f"Google OAuth packages not available: {str(e)}")
+
+# Page configuration - MUST be first Streamlit command
+st.set_page_config(
+    page_title="Khisba GIS - 3D Global Vegetation Analysis",
+    page_icon="🌍",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
@@ -289,39 +304,40 @@ st.markdown("""
 
 # ==================== GOOGLE OAUTH CONFIGURATION ====================
 
-# Load Google OAuth secrets
-def load_google_config():
-    try:
-        if "web" in st.secrets:
-            client_config = dict(st.secrets["web"])
-        elif os.path.exists("client_secret.json"):
-            with open("client_secret.json", "r") as f:
-                client_config = json.load(f)["web"]
-        else:
+if GOOGLE_OAUTH_AVAILABLE:
+    # Load Google OAuth secrets
+    def load_google_config():
+        try:
+            if "web" in st.secrets:
+                client_config = dict(st.secrets["web"])
+            elif os.path.exists("client_secret.json"):
+                with open("client_secret.json", "r") as f:
+                    client_config = json.load(f)["web"]
+            else:
+                return None
+            return client_config
+        except Exception:
+            if os.path.exists("client_secret.json"):
+                with open("client_secret.json", "r") as f:
+                    return json.load(f)["web"]
             return None
-        return client_config
-    except Exception:
-        if os.path.exists("client_secret.json"):
-            with open("client_secret.json", "r") as f:
-                return json.load(f)["web"]
-        return None
 
-GOOGLE_SCOPES = [
-    'https://www.googleapis.com/auth/userinfo.email', 
-    'https://www.googleapis.com/auth/userinfo.profile', 
-    'openid'
-]
+    GOOGLE_SCOPES = [
+        'https://www.googleapis.com/auth/userinfo.email', 
+        'https://www.googleapis.com/auth/userinfo.profile', 
+        'openid'
+    ]
 
-def create_google_flow(client_config):
-    if "redirect_uris" in client_config and isinstance(client_config["redirect_uris"], str):
-        client_config["redirect_uris"] = [client_config["redirect_uris"]]
-    
-    flow = google_auth_oauthlib.flow.Flow.from_client_config(
-        {"web": client_config},
-        scopes=GOOGLE_SCOPES,
-        redirect_uri=client_config["redirect_uris"][0]
-    )
-    return flow
+    def create_google_flow(client_config):
+        if "redirect_uris" in client_config and isinstance(client_config["redirect_uris"], str):
+            client_config["redirect_uris"] = [client_config["redirect_uris"]]
+        
+        flow = google_auth_oauthlib.flow.Flow.from_client_config(
+            {"web": client_config},
+            scopes=GOOGLE_SCOPES,
+            redirect_uri=client_config["redirect_uris"][0]
+        )
+        return flow
 
 # Initialize session state for Google auth
 if "google_credentials" not in st.session_state:
@@ -329,16 +345,7 @@ if "google_credentials" not in st.session_state:
 if "google_user_info" not in st.session_state:
     st.session_state.google_user_info = None
 
-# Page configuration
-st.set_page_config(
-    page_title="Khisba GIS - 3D Global Vegetation Analysis",
-    page_icon="🌍",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# ==================== EARTH ENGINE INITIALIZATION ====================
-
+# Earth Engine Auto-Authentication with Service Account
 def auto_initialize_earth_engine():
     """Automatically initialize Earth Engine with service account credentials"""
     try:
@@ -420,32 +427,34 @@ if 'selected_area_name' not in st.session_state:
 
 # ==================== GOOGLE AUTHENTICATION CHECK ====================
 
-google_config = load_google_config()
+# Only check Google auth if packages are available
+if GOOGLE_OAUTH_AVAILABLE:
+    google_config = load_google_config()
+    
+    # Handle OAuth callback
+    code = st.query_params.get("code")
+    if code and not st.session_state.google_credentials and google_config:
+        with st.spinner("Authenticating with Google..."):
+            try:
+                flow = create_google_flow(google_config)
+                flow.fetch_token(code=code)
+                credentials = flow.credentials
+                st.session_state.google_credentials = credentials
+                
+                # Get user info
+                service = build('oauth2', 'v2', credentials=credentials)
+                user_info = service.userinfo().get().execute()
+                st.session_state.google_user_info = user_info
+                st.session_state.authenticated = True
+                
+                st.query_params.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Authentication failed: {e}")
+                st.query_params.clear()
 
-# Handle OAuth callback
-code = st.query_params.get("code")
-if code and not st.session_state.google_credentials and google_config:
-    with st.spinner("Authenticating with Google..."):
-        try:
-            flow = create_google_flow(google_config)
-            flow.fetch_token(code=code)
-            credentials = flow.credentials
-            st.session_state.google_credentials = credentials
-            
-            # Get user info
-            service = build('oauth2', 'v2', credentials=credentials)
-            user_info = service.userinfo().get().execute()
-            st.session_state.google_user_info = user_info
-            st.session_state.authenticated = True
-            
-            st.query_params.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Authentication failed: {e}")
-            st.query_params.clear()
-
-# Show login page if not authenticated
-if not st.session_state.google_credentials:
+# Show login page if not authenticated (or if Google OAuth is not available)
+if not st.session_state.authenticated:
     st.markdown("""
     <div class="main-container">
         <div class="content-container" style="max-width: 500px; margin: 100px auto;">
@@ -454,7 +463,7 @@ if not st.session_state.google_credentials:
                 <p style="text-align: center; color: #999999; margin-bottom: 30px;">3D Global Vegetation Analytics</p>
                 
                 <div style="text-align: center; padding: 20px;">
-                    <p style="color: #00ff88; font-weight: 600; margin-bottom: 20px;">Sign in with Google to access the platform</p>
+                    <p style="color: #00ff88; font-weight: 600; margin-bottom: 20px;">Welcome to KHISBA GIS Platform</p>
                 </div>
             </div>
         </div>
@@ -463,32 +472,49 @@ if not st.session_state.google_credentials:
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if google_config:
+        if GOOGLE_OAUTH_AVAILABLE and google_config:
             try:
                 flow = create_google_flow(google_config)
                 auth_url, _ = flow.authorization_url(prompt='consent')
                 st.link_button("🔓 Login with Google", auth_url, type="primary", use_container_width=True)
-                
-                st.markdown(f"""
-                <div class="card" style="margin-top: 20px;">
-                    <p style="text-align: center; color: #666666; font-size: 12px;">
-                        Configured redirect: <code>{google_config['redirect_uris'][0]}</code>
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error creating auth flow: {e}")
+                # Fallback to manual login
+                password = st.text_input("Enter admin password", type="password")
+                if st.button("Login", type="primary", use_container_width=True):
+                    if password == "admin":
+                        st.session_state.authenticated = True
+                        st.rerun()
         else:
-            st.error("Google OAuth configuration not found")
+            # Simple password fallback if Google OAuth not available
+            password = st.text_input("Enter admin password", type="password")
+            if st.button("Login", type="primary", use_container_width=True):
+                if password == "admin":
+                    st.session_state.authenticated = True
+                    st.rerun()
     
     st.stop()
 
-# Main application starts here - only accessible after Google auth
+# Main application starts here - only accessible after authentication
 
-# Get user info for display
-user_info = st.session_state.google_user_info
+# Get user info for display if available
+user_info = st.session_state.google_user_info if hasattr(st.session_state, 'google_user_info') else {"name": "Admin User", "email": "admin@khisba.com"}
 
 # Main Dashboard Layout
+if GOOGLE_OAUTH_AVAILABLE and st.session_state.google_user_info:
+    user_display = f"""
+    <div class="user-badge" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 20px; font-size: 12px; color: #00ff88;">
+        <img src="{user_info.get('picture', '')}" style="width: 24px; height: 24px; border-radius: 50%;" alt="Profile">
+        <span>{user_info.get('name', 'User')}</span>
+    </div>
+    """
+else:
+    user_display = f"""
+    <div class="user-badge" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 20px; font-size: 12px; color: #00ff88;">
+        <span>👤 {user_info.get('name', 'User')}</span>
+    </div>
+    """
+
 st.markdown(f"""
 <div class="compact-header">
     <div>
@@ -496,10 +522,7 @@ st.markdown(f"""
         <p style="color: #999999; margin: 0; font-size: 14px;">Interactive 3D Global Vegetation Analytics</p>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
-        <div class="user-badge" style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; background: rgba(0, 255, 136, 0.1); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 20px; font-size: 12px; color: #00ff88;">
-            <img src="{user_info.get('picture', '')}" style="width: 24px; height: 24px; border-radius: 50%;" alt="Profile">
-            <span>{user_info.get('name', 'User')}</span>
-        </div>
+        {user_display}
         <span class="status-badge">Connected</span>
         <span class="status-badge">3D Mapbox Globe</span>
         <span class="status-badge">v2.0</span>
@@ -509,24 +532,24 @@ st.markdown(f"""
 
 # Logout button
 with st.sidebar:
-    st.markdown(f"""
-    <div class="card">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-            <img src="{user_info.get('picture', '')}" style="width: 40px; height: 40px; border-radius: 50%;">
-            <div>
-                <p style="margin: 0; font-weight: 600; color: #fff;">{user_info.get('name', 'User')}</p>
-                <p style="margin: 0; font-size: 12px; color: #999;">{user_info.get('email', '')}</p>
+    if GOOGLE_OAUTH_AVAILABLE and st.session_state.google_user_info:
+        st.markdown(f"""
+        <div class="card">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+                <img src="{user_info.get('picture', '')}" style="width: 40px; height: 40px; border-radius: 50%;">
+                <div>
+                    <p style="margin: 0; font-weight: 600; color: #fff;">{user_info.get('name', 'User')}</p>
+                    <p style="margin: 0; font-size: 12px; color: #999;">{user_info.get('email', '')}</p>
+                </div>
             </div>
         </div>
-        <button onclick="window.location.href='?logout=true'" style="width: 100%; background: linear-gradient(90deg, #ff4444, #cc0000); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer;">🚪 Logout</button>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
-    # Handle logout
-    if st.query_params.get("logout"):
-        st.session_state.google_credentials = None
-        st.session_state.google_user_info = None
+    if st.button("🚪 Logout", type="secondary", use_container_width=True):
         st.session_state.authenticated = False
+        if GOOGLE_OAUTH_AVAILABLE:
+            st.session_state.google_credentials = None
+            st.session_state.google_user_info = None
         st.query_params.clear()
         st.rerun()
 
@@ -778,31 +801,31 @@ with col1:
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # Run Analysis Button - USING EXACT SAME LOGIC AS SECOND CODE
+        # Run Analysis Button
         if st.button("🚀 Run Analysis", type="primary", use_container_width=True, key="run_analysis"):
             if not selected_indices:
                 st.error("Please select at least one vegetation index")
             else:
                 with st.spinner("Running analysis..."):
                     try:
-                        # Define collection based on choice - EXACTLY LIKE SECOND CODE
+                        # Define collection based on choice
                         if collection_choice == "Sentinel-2":
                             collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         else:
                             collection = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
                         
-                        # Filter collection - EXACTLY LIKE SECOND CODE
+                        # Filter collection
                         filtered_collection = (collection
                             .filterDate(start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
                             .filterBounds(st.session_state.selected_geometry.geometry())
                             .filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
                         )
                         
-                        # Import the vegetation indices functions - EXACTLY LIKE SECOND CODE
+                        # Import the vegetation indices functions
                         try:
                             from vegetation_indices import mask_clouds, add_vegetation_indices
                             
-                            # Apply cloud masking and add vegetation indices - EXACTLY LIKE SECOND CODE
+                            # Apply cloud masking and add vegetation indices
                             if collection_choice == "Sentinel-2":
                                 processed_collection = (filtered_collection
                                     .map(mask_clouds)
@@ -832,19 +855,17 @@ with col1:
                             
                             processed_collection = filtered_collection.map(simple_add_indices)
                         
-                        # Calculate time series for selected indices - EXACTLY LIKE SECOND CODE
+                        # Calculate time series for selected indices
                         results = {}
                         for index in selected_indices:
                             try:
-                                # EXACTLY THE SAME AS SECOND CODE - no client-side operations in mapped function
                                 def add_date_and_reduce(image):
                                     reduced = image.select(index).reduceRegion(
                                         reducer=ee.Reducer.mean(),
                                         geometry=st.session_state.selected_geometry.geometry(),
-                                        scale=30,  # Same as second code
+                                        scale=30,
                                         maxPixels=1e9
                                     )
-                                    # This returns a server-side feature - NO CLIENT-SIDE OPERATIONS
                                     return ee.Feature(None, reduced.set('date', image.date().format()))
                                 
                                 # Map over collection
@@ -892,7 +913,7 @@ with col2:
         map_zoom = st.session_state.selected_coordinates['zoom']
         bounds_data = st.session_state.selected_coordinates['bounds']
     
-    # Generate HTML for Mapbox interactive globe with OUTDOORS as default
+    # Generate HTML for Mapbox interactive globe
     mapbox_html = f"""
     <!DOCTYPE html>
     <html>
@@ -1222,46 +1243,6 @@ with col2:
             }});
           }}
           ''' if bounds_data else ''}
-
-          // Add some sample cities for interaction
-          const cities = [
-            {{ name: 'New York', coordinates: [-74.006, 40.7128], country: 'USA', info: 'Financial capital' }},
-            {{ name: 'London', coordinates: [-0.1276, 51.5074], country: 'UK', info: 'Historical capital' }},
-            {{ name: 'Tokyo', coordinates: [139.6917, 35.6895], country: 'Japan', info: 'Mega metropolis' }},
-            {{ name: 'Sydney', coordinates: [151.2093, -33.8688], country: 'Australia', info: 'Harbor city' }},
-            {{ name: 'Cairo', coordinates: [31.2357, 30.0444], country: 'Egypt', info: 'Nile Delta' }}
-          ];
-
-          // Add city markers
-          cities.forEach(city => {{
-            // Create a custom marker element
-            const el = document.createElement('div');
-            el.className = 'marker';
-            el.style.backgroundColor = '#ffaa00';
-            el.style.width = '15px';
-            el.style.height = '15px';
-            el.style.borderRadius = '50%';
-            el.style.border = '2px solid #ffffff';
-            el.style.boxShadow = '0 0 10px rgba(255, 170, 0, 0.5)';
-            el.style.cursor = 'pointer';
-
-            // Create a popup
-            const popup = new mapboxgl.Popup({{
-              offset: 25,
-              closeButton: true,
-              closeOnClick: false
-            }}).setHTML(
-              `<h3>${{city.name}}</h3>
-               <p><strong>Country:</strong> ${{city.country}}</p>
-               <p>${{city.info}}</p>`
-            );
-
-            // Create marker
-            new mapboxgl.Marker(el)
-              .setLngLat(city.coordinates)
-              .setPopup(popup)
-              .addTo(map);
-          }});
         }});
       </script>
     </body>
@@ -1303,133 +1284,6 @@ with col2:
             summary_df = pd.DataFrame(summary_data)
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Charts Section
-        if results:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.markdown('<div class="card-title"><div class="icon">📈</div><h3 style="margin: 0;">Vegetation Analytics</h3></div>', unsafe_allow_html=True)
-            
-            for index, data in results.items():
-                if data['dates'] and data['values']:
-                    try:
-                        # Parse dates
-                        dates = []
-                        for date_str in data['dates']:
-                            try:
-                                if 'T' in date_str:
-                                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                                else:
-                                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-                                dates.append(date_obj)
-                            except:
-                                continue
-                        
-                        values = [v for v in data['values'] if v is not None]
-                        
-                        if dates and values and len(dates) == len(values):
-                            df = pd.DataFrame({'Date': dates, 'Value': values})
-                            df = df.sort_values('Date')
-                            
-                            # Create chart with professional styling
-                            fig = go.Figure()
-                            
-                            # Calculate if value is increasing or decreasing
-                            current_value = df['Value'].iloc[-1] if len(df) > 0 else 0
-                            prev_value = df['Value'].iloc[-2] if len(df) > 1 else current_value
-                            is_increasing = current_value >= prev_value
-                            
-                            fig.add_trace(go.Scatter(
-                                x=df['Date'], 
-                                y=df['Value'],
-                                mode='lines+markers',
-                                name=f'{index} Index',
-                                line=dict(color='#00ff88' if is_increasing else '#ff4444', width=3),
-                                marker=dict(
-                                    size=6,
-                                    color='#00ff88' if is_increasing else '#ff4444',
-                                    line=dict(width=1, color='#ffffff')
-                                ),
-                                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x|%Y-%m-%d}<br>Value: %{y:.4f}<extra></extra>'
-                            ))
-                            
-                            # Add 5-day moving average
-                            if len(df) >= 5:
-                                df['MA_5'] = df['Value'].rolling(window=min(5, len(df))).mean()
-                                fig.add_trace(go.Scatter(
-                                    x=df['Date'], 
-                                    y=df['MA_5'],
-                                    mode='lines',
-                                    name='MA 5-day',
-                                    line=dict(color='#ffaa00', width=2, dash='dot'),
-                                    opacity=0.7
-                                ))
-                            
-                            # Update layout
-                            fig.update_layout(
-                                title=f'{index} - Vegetation Analysis',
-                                plot_bgcolor='#0a0a0a',
-                                paper_bgcolor='#0a0a0a',
-                                font=dict(color='#ffffff'),
-                                xaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff',
-                                    tickformat='%Y-%m-%d'
-                                ),
-                                yaxis=dict(
-                                    gridcolor='#222222',
-                                    zerolinecolor='#222222',
-                                    tickcolor='#444444',
-                                    title_font_color='#ffffff',
-                                    title=f'{index} Value'
-                                ),
-                                legend=dict(
-                                    bgcolor='rgba(0,0,0,0.5)',
-                                    bordercolor='#222222',
-                                    borderwidth=1,
-                                    x=0.01,
-                                    y=0.99
-                                ),
-                                hovermode='x unified',
-                                height=300,
-                                margin=dict(t=50, b=50, l=50, r=50)
-                            )
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                    except Exception as e:
-                        st.error(f"Error creating chart for {index}: {str(e)}")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-        # Export Section
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title"><div class="icon">💾</div><h3 style="margin: 0;">Data Export</h3></div>', unsafe_allow_html=True)
-        
-        if st.button("📥 Download Results as CSV", type="primary", use_container_width=True, key="export_csv"):
-            export_data = []
-            for index, data in results.items():
-                for date, value in zip(data['dates'], data['values']):
-                    if value is not None:
-                        export_data.append({
-                            'Date': date,
-                            'Index': index,
-                            'Value': value
-                        })
-            
-            if export_data:
-                export_df = pd.DataFrame(export_data)
-                csv = export_df.to_csv(index=False)
-                
-                st.download_button(
-                    label="Download CSV File",
-                    data=csv,
-                    file_name=f"vegetation_indices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No data available for export")
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
@@ -1441,7 +1295,7 @@ st.markdown("""
         <span class="status-badge">3D Mapbox</span>
         <span class="status-badge">Earth Engine</span>
         <span class="status-badge">Streamlit</span>
-        <span class="status-badge">Google Auth</span>
+        <span class="status-badge">Vegetation Analytics</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
