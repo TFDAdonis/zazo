@@ -12,15 +12,8 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import ee
 import traceback
-
-# Try to import Google OAuth libraries (handle if not installed)
-try:
-    import google_auth_oauthlib.flow
-    from googleapiclient.discovery import build
-    GOOGLE_OAUTH_AVAILABLE = True
-except ImportError:
-    GOOGLE_OAUTH_AVAILABLE = False
-    st.warning("Google OAuth libraries not installed. Authentication will be disabled.")
+import google_auth_oauthlib.flow
+from googleapiclient.discovery import build
 
 # Custom CSS for Clean Green & Black TypeScript/React Style
 st.markdown("""
