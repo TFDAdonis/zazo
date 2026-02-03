@@ -1344,4 +1344,4 @@ st.markdown("""
         <span class="status-badge">Plotly</span>
     </div>
 </div>
-""", unsafe_allow_html=True)      zazo
+""", unsafe_allow_html=True)      
